@@ -24,6 +24,9 @@ jobs:
       - name: ESLint
         run: npm run lint
         working-directory: node/site2ts-worker
+      - name: Build
+        run: npm run build
+        working-directory: node/site2ts-worker
       - name: Schema validation
         run: |
           npm i -g ajv-cli@5
