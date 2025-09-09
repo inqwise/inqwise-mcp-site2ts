@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/audit.request.v1.json",
+  "title": "audit.request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generationId"],
+  "properties": {
+    "generationId": { "type": "string" },
+    "tsStrict": { "type": "boolean", "default": true },
+    "eslintConfig": { "type": "string", "default": "recommended" }
+  }
+}
+

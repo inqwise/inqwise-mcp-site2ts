@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/apply.response.v1.json",
+  "title": "apply.response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "applied", "changedFiles", "deletedFiles"],
+  "properties": {
+    "jobId": { "$ref": "common.v1.json#/$defs/jobId" },
+    "applied": { "type": "boolean" },
+    "changedFiles": { "type": "array", "items": { "type": "string" } },
+    "deletedFiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "removed": { "type": "array", "items": { "type": "string" } },
+        "skipped": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
+

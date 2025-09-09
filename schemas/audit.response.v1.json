@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/audit.response.v1.json",
+  "title": "audit.response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "auditId", "tsc", "eslint"],
+  "properties": {
+    "jobId": { "$ref": "common.v1.json#/$defs/jobId" },
+    "auditId": { "$ref": "common.v1.json#/$defs/ulid" },
+    "tsc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errors", "reportPath"],
+      "properties": {
+        "errors": { "type": "integer", "minimum": 0 },
+        "reportPath": { "type": "string" }
+      }
+    },
+    "eslint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errors", "warnings", "reportPath"],
+      "properties": {
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "reportPath": { "type": "string" }
+      }
+    }
+  }
+}
+

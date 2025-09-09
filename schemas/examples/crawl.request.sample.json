@@ -1,0 +1,13 @@
+{
+  "startUrl": "https://example.com",
+  "sameOrigin": true,
+  "maxPages": 25,
+  "maxDepth": 3,
+  "allow": ["/docs/**"],
+  "deny": ["/admin/**"],
+  "concurrency": 4,
+  "delayMs": 0,
+  "useSitemap": true,
+  "obeyRobots": true
+}
+

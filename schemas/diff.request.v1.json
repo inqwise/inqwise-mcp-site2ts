@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/diff.request.v1.json",
+  "title": "diff.request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generationId"],
+  "properties": {
+    "generationId": { "type": "string" },
+    "baselines": { "type": "string", "enum": ["recrawl", "cached"], "default": "recrawl" },
+    "viewport": { "$ref": "common.v1.json#/$defs/viewport" },
+    "threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.01 }
+  }
+}
+

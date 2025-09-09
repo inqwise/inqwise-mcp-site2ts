@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/analyze.response.v1.json",
+  "title": "analyze.response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "analysisId", "routes", "assets"],
+  "properties": {
+    "jobId": { "$ref": "common.v1.json#/$defs/jobId" },
+    "analysisId": { "$ref": "common.v1.json#/$defs/ulid" },
+    "routes": { "type": "array", "items": { "$ref": "common.v1.json#/$defs/routeEntry" } },
+    "forms": { "type": "array", "items": { "$ref": "common.v1.json#/$defs/formEntry" } },
+    "assets": { "$ref": "common.v1.json#/$defs/assets" }
+  }
+}
+

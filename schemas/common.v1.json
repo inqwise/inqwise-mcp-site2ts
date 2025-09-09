@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/common.v1.json",
+  "title": "common.v1",
+  "$defs": {
+    "ulid": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+    "url": { "type": "string", "format": "uri" },
+    "jobId": { "$ref": "#/$defs/ulid" },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["w", "h", "deviceScale"],
+      "properties": {
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 },
+        "deviceScale": { "type": "number", "minimum": 0.5, "maximum": 4 }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "data": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    },
+    "diffArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "actual", "diff"],
+      "properties": {
+        "baseline": { "type": "string" },
+        "actual": { "type": "string" },
+        "diff": { "type": "string" }
+      }
+    },
+    "routeEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "sourceUrl", "dynamic"],
+      "properties": {
+        "route": { "type": "string" },
+        "sourceUrl": { "$ref": "#/$defs/url" },
+        "dynamic": { "type": "boolean" },
+        "params": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "formEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "method", "fields"],
+      "properties": {
+        "route": { "type": "string" },
+        "method": { "type": "string" },
+        "fields": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "images": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "fonts": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "styles": { "type": "array", "items": { "type": "string" }, "default": [] }
+      }
+    }
+  }
+}
+

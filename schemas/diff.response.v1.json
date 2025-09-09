@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/diff.response.v1.json",
+  "title": "diff.response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "diffId", "perRoute", "summary"],
+  "properties": {
+    "jobId": { "$ref": "common.v1.json#/$defs/jobId" },
+    "diffId": { "$ref": "common.v1.json#/$defs/ulid" },
+    "perRoute": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["route", "diffRatio", "artifacts"],
+        "properties": {
+          "route": { "type": "string" },
+          "diffRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+          "artifacts": { "$ref": "common.v1.json#/$defs/diffArtifacts" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failed", "avg"],
+      "properties": {
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "avg": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}
+

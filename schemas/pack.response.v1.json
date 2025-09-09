@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/pack.response.v1.json",
+  "title": "pack.response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "tarPath"],
+  "properties": {
+    "jobId": { "$ref": "common.v1.json#/$defs/jobId" },
+    "tarPath": { "type": "string" }
+  }
+}
+

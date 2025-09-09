@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/generate.request.v1.json",
+  "title": "generate.request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["analysisId", "scaffoldId"],
+  "properties": {
+    "analysisId": { "type": "string" },
+    "scaffoldId": { "type": "string" },
+    "tailwindMode": { "type": "string", "enum": ["full"], "default": "full" }
+  }
+}
+

@@ -1,0 +1,17 @@
+{
+  "jobId": "01J6M3Z5G5S8H1K2M3N4P5Q6R7",
+  "diffId": "01J6M3Z5G5S8H1K2M3N4P5Q6R8",
+  "perRoute": [
+    {
+      "route": "/",
+      "diffRatio": 0.004,
+      "artifacts": {
+        "baseline": ".site2ts/reports/diff/01.../home/baseline.png",
+        "actual": ".site2ts/reports/diff/01.../home/actual.png",
+        "diff": ".site2ts/reports/diff/01.../home/diff.png"
+      }
+    }
+  ],
+  "summary": { "passed": 1, "failed": 0, "avg": 0.004 }
+}
+

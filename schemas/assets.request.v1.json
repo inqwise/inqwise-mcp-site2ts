@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/assets.request.v1.json",
+  "title": "assets.request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "oneOf": [
+    { "required": ["siteMapId"], "properties": { "siteMapId": { "type": "string" } } },
+    { "required": ["generationId"], "properties": { "generationId": { "type": "string" } } }
+  ]
+}
+

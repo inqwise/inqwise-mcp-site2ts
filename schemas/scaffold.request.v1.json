@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/scaffold.request.v1.json",
+  "title": "scaffold.request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["analysisId"],
+  "properties": {
+    "analysisId": { "type": "string" },
+    "appRouter": { "type": "boolean", "default": true }
+  }
+}
+

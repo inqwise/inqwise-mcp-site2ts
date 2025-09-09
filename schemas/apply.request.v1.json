@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/apply.request.v1.json",
+  "title": "apply.request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generationId", "target"],
+  "properties": {
+    "generationId": { "type": "string" },
+    "target": { "type": "string" },
+    "dryRun": { "type": "boolean", "default": false }
+  }
+}
+
