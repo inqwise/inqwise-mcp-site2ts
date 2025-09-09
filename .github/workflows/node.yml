@@ -15,7 +15,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: node/site2ts-worker/package.json
       - name: Install
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
         working-directory: node/site2ts-worker
       - name: TypeScript check
         run: npm run typecheck
