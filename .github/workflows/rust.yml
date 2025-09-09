@@ -9,10 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
           components: rustfmt, clippy
       - name: fmt
         run: cargo fmt --all --check
@@ -23,4 +21,3 @@ jobs:
       - name: build
         run: cargo build --verbose
         working-directory: rust/site2ts-server
-
