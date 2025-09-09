@@ -24,6 +24,7 @@
   "dependencies": {
     "cheerio": "^1.0.0",
     "posthtml": "^0.16.6",
-    "ulid": "^2.3.0"
+    "ulid": "^2.3.0",
+    "playwright-core": "^1.46.0"
   }
 }
