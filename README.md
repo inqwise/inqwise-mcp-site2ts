@@ -41,3 +41,5 @@ If creating the repo via GitHub UI, choose: Owner `inqwise`, repo name `inqwise-
 ## Status
 MVP spec authored; implementation tasks planned. See `PROGRESS.md`.
 
+## License
+Apache-2.0 — see `LICENSE` for details.
