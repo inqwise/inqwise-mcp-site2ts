@@ -1,0 +1,30 @@
+name: Node CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: node/site2ts-worker/package.json
+      - name: Install
+        run: npm ci
+        working-directory: node/site2ts-worker
+      - name: TypeScript check
+        run: npm run typecheck
+        working-directory: node/site2ts-worker
+      - name: ESLint
+        run: npm run lint
+        working-directory: node/site2ts-worker
+      - name: Schema validation
+        run: |
+          npm i -g ajv-cli@5
+          ajv compile -s schemas/*.json || true
+

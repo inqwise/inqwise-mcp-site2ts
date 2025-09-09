@@ -1,0 +1,26 @@
+name: Rust CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      - name: fmt
+        run: cargo fmt --all --check
+        working-directory: rust/site2ts-server
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: rust/site2ts-server
+      - name: build
+        run: cargo build --verbose
+        working-directory: rust/site2ts-server
+

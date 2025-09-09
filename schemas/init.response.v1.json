@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/init.response.v1.json",
+  "title": "init.response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "pinned"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "pinned": {
+      "type": "object",
+      "required": ["node", "next", "ts", "playwright"],
+      "properties": {
+        "node": { "type": "string" },
+        "next": { "type": "string" },
+        "ts": { "type": "string" },
+        "playwright": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+

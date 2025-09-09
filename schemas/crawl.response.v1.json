@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/crawl.response.v1.json",
+  "title": "crawl.response.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "siteMapId", "pages"],
+  "properties": {
+    "jobId": { "type": "string" },
+    "siteMapId": { "type": "string" },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url", "hash"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "hash": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}
+

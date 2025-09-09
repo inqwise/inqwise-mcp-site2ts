@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inqwise.com/site2ts/schemas/crawl.request.v1.json",
+  "title": "crawl.request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["startUrl"],
+  "properties": {
+    "startUrl": { "type": "string", "format": "uri" },
+    "sameOrigin": { "type": "boolean", "default": true },
+    "maxPages": { "type": "integer", "minimum": 1, "maximum": 2000, "default": 50 },
+    "maxDepth": { "type": "integer", "minimum": 0, "default": 5 },
+    "allow": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "deny": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "concurrency": { "type": "integer", "minimum": 1, "maximum": 64, "default": 4 },
+    "delayMs": { "type": "integer", "minimum": 0, "default": 0 },
+    "useSitemap": { "type": "boolean", "default": true },
+    "obeyRobots": { "type": "boolean", "default": true }
+  }
+}
+
