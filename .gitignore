@@ -1,0 +1,38 @@
+# OS
+.DS_Store
+
+# Node / JS
+node_modules/
+.npm/
+.pnpm-store/
+dist/
+build/
+coverage/
+.turbo/
+.next/
+
+# Playwright
+playwright-report/
+test-results/
+.playwright-cache/
+
+# Rust
+target/
+Cargo.lock
+
+# Env
+.env
+.env.*
+.env.local
+
+# Site2TS sandbox
+.site2ts/cache/
+.site2ts/logs/
+.site2ts/exports/
+.site2ts/reports/
+
+# Misc
+*.tgz
+*.tar
+*.tar.gz
+

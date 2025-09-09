@@ -1,0 +1,20 @@
+{
+  "tasks": [
+    { "name": "Define MCP API JSON schemas", "status": "pending" },
+    { "name": "Scaffold Rust MCP server", "status": "pending" },
+    { "name": "Scaffold Node worker", "status": "pending" },
+    { "name": "Implement crawl and cache", "status": "pending" },
+    { "name": "Implement analyze outputs", "status": "pending" },
+    { "name": "Implement scaffold (Next+Tailwind)", "status": "pending" },
+    { "name": "Implement generate (HTML→TSX)", "status": "pending" },
+    { "name": "Implement visual diff", "status": "pending" },
+    { "name": "Implement audit (tsc/eslint)", "status": "pending" },
+    { "name": "Implement apply (safety)", "status": "pending" },
+    { "name": "Implement assets and pack", "status": "pending" },
+    { "name": "Integrate logging and errors", "status": "pending" },
+    { "name": "Add version pinning init", "status": "pending" },
+    { "name": "Docs and examples", "status": "pending" },
+    { "name": "Repo scaffolding and progress tracking", "status": "in_progress" }
+  ]
+}
+
