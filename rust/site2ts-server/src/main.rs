@@ -67,10 +67,18 @@ struct CrawlParams {
     obeyRobots: bool,
 }
 
-fn default_true() -> bool { true }
-fn default_max_pages() -> u32 { 50 }
-fn default_max_depth() -> u32 { 5 }
-fn default_concurrency() -> u32 { 4 }
+fn default_true() -> bool {
+    true
+}
+fn default_max_pages() -> u32 {
+    50
+}
+fn default_max_depth() -> u32 {
+    5
+}
+fn default_concurrency() -> u32 {
+    4
+}
 
 fn ensure_dir(path: &Path) -> Result<()> {
     if !path.exists() {

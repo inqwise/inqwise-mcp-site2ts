@@ -27,6 +27,9 @@ jobs:
       - name: Schema validation
         run: |
           npm i -g ajv-cli@5
-          ajv compile -r schemas/common.v1.json -s schemas/*.json
+          for f in schemas/*.json; do
+            echo "Compiling $f";
+            ajv compile -r schemas/common.v1.json -s "$f" || exit 1;
+          done
           ajv validate -s schemas/crawl.request.v1.json -d schemas/examples/crawl.request.sample.json
           ajv validate -s schemas/diff.response.v1.json -d schemas/examples/diff.response.sample.json
