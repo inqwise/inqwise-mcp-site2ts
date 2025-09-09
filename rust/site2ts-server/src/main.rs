@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use tracing::{error, info, Level};
 use tracing_subscriber::EnvFilter;
 use ulid::Ulid;
+mod worker;
+use worker::Worker;
 
 #[derive(Debug, Deserialize)]
 struct RpcRequest {
@@ -151,11 +153,40 @@ fn handle_init(params: InitParams) -> Result<Value> {
 }
 
 fn handle_crawl(params: CrawlParams) -> Result<Value> {
-    // Stub: generate IDs, write empty sitemap manifest, and return no pages.
-    let job_id = Ulid::new().to_string();
-    let site_map_id = Ulid::new().to_string();
+    // Call Node worker crawl for IDs, then persist sitemap manifest according to spec.
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call(
+        "crawl",
+        json!({
+            "startUrl": params.startUrl,
+            "sameOrigin": params.sameOrigin,
+            "maxPages": params.maxPages,
+            "maxDepth": params.maxDepth,
+            "allow": params.allow,
+            "deny": params.deny,
+            "concurrency": params.concurrency,
+            "delayMs": params.delayMs,
+            "useSitemap": params.useSitemap,
+            "obeyRobots": params.obeyRobots
+        }),
+    )?;
 
-    // Write sitemap file
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&Ulid::new().to_string())
+        .to_string();
+    let site_map_id = res
+        .get("siteMapId")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&Ulid::new().to_string())
+        .to_string();
+    let pages = res
+        .get("pages")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+
     let sitemap_dir = PathBuf::from(".site2ts").join("cache").join("sitemaps");
     ensure_dir(&sitemap_dir)?;
     let sitemap = json!({
@@ -168,18 +199,16 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
         "deny": params.deny,
         "useSitemap": params.useSitemap,
         "obeyRobots": params.obeyRobots,
-        "pages": [] as [Value; 0]
+        "pages": pages
     });
     let path = sitemap_dir.join(format!("{}.json", site_map_id));
     write_json_pretty(&path, &sitemap)?;
-
-    // Log completion
-    log_ndjson(&job_id, "crawl", "Crawl stub completed", json!({ "pages": 0 }))?;
+    log_ndjson(&job_id, "crawl", "Crawl stub completed", json!({ "pages": sitemap["pages"].as_array().map(|a| a.len()).unwrap_or(0) }))?;
 
     Ok(json!({
         "jobId": job_id,
         "siteMapId": site_map_id,
-        "pages": [] as [Value; 0]
+        "pages": sitemap["pages"].clone()
     }))
 }
 
