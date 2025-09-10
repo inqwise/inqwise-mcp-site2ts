@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Minimatch } from 'minimatch';
 import { XMLParser } from 'fast-xml-parser';
+import { ulid } from 'ulid';
 
 export type CrawlParams = {
   startUrl: string;
@@ -226,4 +227,3 @@ export async function crawl(params: CrawlParams): Promise<{ jobId: string; siteM
 
   return { jobId, siteMapId, pages };
 }
-
