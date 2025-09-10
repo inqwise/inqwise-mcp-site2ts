@@ -81,6 +81,14 @@ struct ScaffoldParams {
     appRouter: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct GenerateParams {
+    analysisId: String,
+    scaffoldId: String,
+    #[serde(default)]
+    tailwindMode: String,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -313,6 +321,42 @@ fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
     }))
 }
 
+fn handle_generate(params: GenerateParams) -> Result<Value> {
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call(
+        "generate",
+        json!({
+            "analysisId": params.analysisId,
+            "scaffoldId": params.scaffoldId,
+            "tailwindMode": if params.tailwindMode.is_empty() { "full" } else { &params.tailwindMode },
+        }),
+    )?;
+
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    let generation_id = res
+        .get("generationId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+
+    log_ndjson(
+        &job_id,
+        "generate",
+        "Generate complete",
+        json!({ "generationId": generation_id }),
+    )?;
+
+    Ok(json!({
+        "jobId": job_id,
+        "generationId": generation_id
+    }))
+}
+
 fn respond(result: Option<Value>, error: Option<Value>, id: Option<Value>) {
     let resp = RpcResponse {
         jsonrpc: "2.0",
@@ -376,6 +420,9 @@ async fn main() -> Result<()> {
             "scaffold" => serde_json::from_value::<ScaffoldParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
                 .and_then(|p| handle_scaffold(p)),
+            "generate" => serde_json::from_value::<GenerateParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(|p| handle_generate(p)),
             _ => Err(anyhow!("method not found")),
         };
         match res {

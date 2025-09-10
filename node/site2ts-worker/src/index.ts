@@ -3,6 +3,7 @@ import { ulid } from 'ulid';
 import { crawl, CrawlParams } from './crawl.js';
 import { analyze } from './analyze.js';
 import { scaffold } from './scaffold.js';
+import { generate } from './generate.js';
 
 type Json = any;
 
@@ -49,6 +50,14 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
       if (!analysisId) throw Object.assign(new Error('analysisId required'), { code: -32602 });
       const appRouter = Boolean(params?.appRouter ?? true);
       return await scaffold({ analysisId, appRouter });
+    }
+    case 'generate': {
+      const analysisId = (params?.analysisId as string) || '';
+      const scaffoldId = (params?.scaffoldId as string) || '';
+      const tailwindMode = (params?.tailwindMode as string) || 'full';
+      if (!analysisId) throw Object.assign(new Error('analysisId required'), { code: -32602 });
+      if (!scaffoldId) throw Object.assign(new Error('scaffoldId required'), { code: -32602 });
+      return await generate(analysisId, scaffoldId, tailwindMode);
     }
     default:
       throw Object.assign(new Error('method not found'), { code: -32601 });
