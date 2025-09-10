@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulid';
 
@@ -44,27 +44,27 @@ export async function analyze(siteMapId: string): Promise<AnalyzeResult> {
       const html = await fs.readFile(htmlPath, 'utf-8');
       const $ = cheerio.load(html);
 
-      $('form').each((_, el) => {
+      $('form').each((_: number, el: any) => {
         const method = ($(el).attr('method') || 'GET').toUpperCase();
         const fields = new Set<string>();
         $(el)
           .find('input[name], select[name], textarea[name]')
-          .each((__, fld) => {
+          .each((__: number, fld: any) => {
             const name = $(fld).attr('name');
             if (name) fields.add(name);
           });
         forms.push({ route, method, fields: Array.from(fields) });
       });
 
-      $('img[src]').each((_, img) => {
+      $('img[src]').each((_: number, img: any) => {
         const src = $(img).attr('src');
         if (src) images.add(new URL(src, u).toString());
       });
-      $('link[rel="stylesheet"][href]').each((_, l) => {
+      $('link[rel="stylesheet"][href]').each((_: number, l: any) => {
         const href = $(l).attr('href');
         if (href) styles.add(new URL(href, u).toString());
       });
-      $('link[rel="preload"][as="font"][href]').each((_, l) => {
+      $('link[rel="preload"][as="font"][href]').each((_: number, l: any) => {
         const href = $(l).attr('href');
         if (href) fonts.add(new URL(href, u).toString());
       });
@@ -81,4 +81,3 @@ export async function analyze(siteMapId: string): Promise<AnalyzeResult> {
     assets: { images: Array.from(images), fonts: Array.from(fonts), styles: Array.from(styles) },
   };
 }
-

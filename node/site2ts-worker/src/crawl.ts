@@ -213,7 +213,8 @@ export async function crawl(params: CrawlParams): Promise<{ jobId: string; siteM
     // Extract links from saved HTML to reduce repeated fetch
     try {
       const html = await fs.readFile(path.join(baseDir, sha1(url.toString()), 'page.html'), 'utf-8');
-      const links = Array.from(html.matchAll(/href\s*=\s*"([^"]+)"/gi)).map((m) => m[1]);
+      const matches = Array.from(html.matchAll(/href\s*=\s*"([^"]+)"/gi));
+      const links = matches.map((m: RegExpMatchArray) => m[1]);
       for (const href of links) {
         const nu = normalizeUrl(href, url);
         if (!nu) continue;
