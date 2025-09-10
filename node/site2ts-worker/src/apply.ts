@@ -32,6 +32,32 @@ export async function apply(_generationId: string, target: string, dryRun: boole
   const changedFiles: string[] = [];
   const deletedFiles = { removed: [] as string[], skipped: [] as string[] };
 
+  // Build file sets for deletion analysis (under app/ only)
+  const stagingSet = new Set<string>();
+  for await (const file of walk(staging)) {
+    const rel = path.relative(staging, file).replaceAll('\\', '/');
+    if (isExcluded(rel)) continue;
+    stagingSet.add(rel);
+  }
+  const targetApp = path.join(target, 'app');
+  try {
+    for await (const file of walk(targetApp)) {
+      const rel = path.relative(target, file).replaceAll('\\', '/');
+      if (isExcluded(rel)) continue;
+      if (rel.startsWith('app/') && !stagingSet.has(rel)) {
+        // Candidate for deletion: managed app/ file not in staging
+        if (dryRun) {
+          deletedFiles.removed.push(rel);
+        } else {
+          await fs.rm(file, { force: true });
+          deletedFiles.removed.push(rel);
+        }
+      }
+    }
+  } catch {
+    // target app dir may not exist; ignore
+  }
+
   for await (const file of walk(staging)) {
     const rel = path.relative(staging, file).replaceAll('\\', '/');
     if (isExcluded(rel)) continue;
@@ -47,9 +73,11 @@ export async function apply(_generationId: string, target: string, dryRun: boole
   if (dryRun) {
     const planDir = path.join('.site2ts', 'reports', 'apply');
     await ensureDir(planDir);
-    await fs.writeFile(path.join(planDir, `${jobId}.plan.json`), JSON.stringify({ changedFiles, deletedFiles }, null, 2));
+    await fs.writeFile(
+      path.join(planDir, `${jobId}.plan.json`),
+      JSON.stringify({ changedFiles, deletedFiles }, null, 2),
+    );
   }
 
   return { jobId, applied: !dryRun, changedFiles, deletedFiles };
 }
-
