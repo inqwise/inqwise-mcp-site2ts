@@ -67,7 +67,7 @@ async function copyImages(appAssetsDir: string, images: string[] = []) {
   return mapping;
 }
 
-export async function generate(analysisId: string, _scaffoldId: string, _tailwindMode: string) {
+export async function generate(_analysisId: string, _scaffoldId: string, _tailwindMode: string) {
   const jobId = ulid();
   const generationId = ulid();
   const stagingDir = path.join('.site2ts', 'staging');
@@ -110,4 +110,3 @@ export async function generate(analysisId: string, _scaffoldId: string, _tailwin
 
   return { jobId, generationId };
 }
-

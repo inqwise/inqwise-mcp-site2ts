@@ -1,11 +1,10 @@
 import readline from 'node:readline';
-import { ulid } from 'ulid';
-import { crawl, CrawlParams } from './crawl.js';
-import { analyze } from './analyze.js';
-import { scaffold } from './scaffold.js';
-import { generate } from './generate.js';
+import { crawl, CrawlParams } from './crawl';
+import { analyze } from './analyze';
+import { scaffold } from './scaffold';
+import { generate } from './generate';
 
-type Json = any;
+type Json = unknown;
 
 type RpcRequest = {
   jsonrpc?: string;
@@ -66,21 +65,24 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
 
 function main() {
   const rl = readline.createInterface({ input: process.stdin });
-  rl.on('line', async (line) => {
+  rl.on('line', async (line: string) => {
     const trimmed = line.trim();
     if (!trimmed) return;
     let req: RpcRequest;
     try {
       req = JSON.parse(trimmed);
-    } catch (e: any) {
-      respond(false, { code: -32700, message: `parse error: ${e?.message || e}` });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      respond(false, { code: -32700, message: `parse error: ${msg}` });
       return;
     }
     try {
       const res = await handleAsync(req.method, req.params || {});
       respond(true, res, req.id);
-    } catch (e: any) {
-      respond(false, { code: e?.code ?? -32603, message: e?.message ?? 'internal error' }, req.id);
+    } catch (e: unknown) {
+      const code = typeof (e as any)?.code === 'number' ? (e as any).code : -32603;
+      const message = (e as any)?.message ?? 'internal error';
+      respond(false, { code, message }, req.id);
     }
   });
 }

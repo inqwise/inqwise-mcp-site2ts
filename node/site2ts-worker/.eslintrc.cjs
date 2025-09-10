@@ -11,7 +11,10 @@ module.exports = {
     'prettier'
   ],
   rules: {
-    'no-console': 'off'
+    'no-console': 'off',
+    'no-empty': ['warn', { allowEmptyCatch: true }],
+    '@typescript-eslint/no-explicit-any': 'warn',
+    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }]
   },
   settings: {
     'import/resolver': {

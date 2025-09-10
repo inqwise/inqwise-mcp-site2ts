@@ -182,7 +182,7 @@ export async function crawl(params: CrawlParams): Promise<{ jobId: string; siteM
         const nu = normalizeUrl(e, start);
         if (nu) seedUrls.push(nu);
       }
-    } catch {}
+    } catch { /* ignore sitemap parse failures (MVP) */ }
   }
 
   for (const u of seedUrls) {
@@ -221,7 +221,7 @@ export async function crawl(params: CrawlParams): Promise<{ jobId: string; siteM
         if (visited.has(nu.toString())) continue;
         queue.push({ url: nu, depth: depth + 1 });
       }
-    } catch {}
+    } catch { /* ignore link extraction failures (MVP) */ }
 
     if (params.delayMs > 0) await new Promise((r) => setTimeout(r, params.delayMs));
   }
