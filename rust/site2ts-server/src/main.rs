@@ -376,6 +376,40 @@ struct DiffParams {
     threshold: Option<f64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AuditParams {
+    #[serde(rename = "generationId")]
+    generation_id: String,
+    #[serde(default, rename = "tsStrict")]
+    ts_strict: Option<bool>,
+    #[serde(default, rename = "eslintConfig")]
+    eslint_config: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApplyParams {
+    #[serde(rename = "generationId")]
+    generation_id: String,
+    #[serde(default)]
+    target: Option<String>,
+    #[serde(default, rename = "dryRun")]
+    dry_run: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AssetsParams {
+    #[serde(rename = "siteMapId")]
+    site_map_id: Option<String>,
+    #[serde(rename = "generationId")]
+    generation_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PackParams {
+    #[serde(rename = "generationId")]
+    generation_id: String,
+}
+
 fn handle_diff(params: DiffParams) -> Result<Value> {
     let worker_mutex = Worker::get()?;
     let mut w = worker_mutex.lock().unwrap();
@@ -400,7 +434,93 @@ fn handle_diff(params: DiffParams) -> Result<Value> {
         .map(|s| s.to_string())
         .unwrap_or_else(|| Ulid::new().to_string());
 
-    log_ndjson(&job_id, "diff", "Visual diff complete", json!({ "diffId": diff_id }))?;
+    log_ndjson(
+        &job_id,
+        "diff",
+        "Visual diff complete",
+        json!({ "diffId": diff_id }),
+    )?;
+    Ok(res)
+}
+
+fn handle_audit(params: AuditParams) -> Result<Value> {
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call(
+        "audit",
+        json!({
+            "generationId": params.generation_id,
+            "tsStrict": params.ts_strict.unwrap_or(true),
+            "eslintConfig": params.eslint_config.unwrap_or_else(|| "recommended".into()),
+        }),
+    )?;
+
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    let audit_id = res
+        .get("auditId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    log_ndjson(
+        &job_id,
+        "audit",
+        "Audit completed",
+        json!({ "auditId": audit_id }),
+    )?;
+    Ok(res)
+}
+
+fn handle_apply(params: ApplyParams) -> Result<Value> {
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call(
+        "apply",
+        json!({
+            "generationId": params.generation_id,
+            "target": params.target.unwrap_or_else(|| "./".into()),
+            "dryRun": params.dry_run.unwrap_or(false),
+        }),
+    )?;
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    log_ndjson(&job_id, "apply", "Apply executed", json!({}))?;
+    Ok(res)
+}
+
+fn handle_assets(params: AssetsParams) -> Result<Value> {
+    let id = params
+        .site_map_id
+        .or(params.generation_id)
+        .unwrap_or_else(|| Ulid::new().to_string());
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call("assets", json!({ "generationId": id }))?;
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    log_ndjson(&job_id, "assets", "Assets manifest generated", json!({}))?;
+    Ok(res)
+}
+
+fn handle_pack(params: PackParams) -> Result<Value> {
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call("pack", json!({ "generationId": params.generation_id }))?;
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    log_ndjson(&job_id, "pack", "Pack completed", json!({}))?;
     Ok(res)
 }
 
@@ -473,6 +593,18 @@ async fn main() -> Result<()> {
             "diff" => serde_json::from_value::<DiffParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
                 .and_then(handle_diff),
+            "audit" => serde_json::from_value::<AuditParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(handle_audit),
+            "apply" => serde_json::from_value::<ApplyParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(handle_apply),
+            "assets" => serde_json::from_value::<AssetsParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(handle_assets),
+            "pack" => serde_json::from_value::<PackParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(handle_pack),
             _ => Err(anyhow!("method not found")),
         };
         match res {
