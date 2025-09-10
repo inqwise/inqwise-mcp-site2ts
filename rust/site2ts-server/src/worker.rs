@@ -27,8 +27,14 @@ impl Worker {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
         let mut child = cmd.spawn().context("spawn node worker")?;
-        let stdin = child.stdin.take().ok_or_else(|| anyhow!("no worker stdin"))?;
-        let stdout = child.stdout.take().ok_or_else(|| anyhow!("no worker stdout"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("no worker stdin"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("no worker stdout"))?;
         Ok(Self {
             child,
             stdin,
@@ -37,7 +43,9 @@ impl Worker {
     }
 
     pub fn get() -> Result<&'static Mutex<Worker>> {
-        WORKER.get_or_try_init(|| Mutex::new(Worker::spawn()?)).map_err(|e| anyhow!(e.to_string()))
+        WORKER
+            .get_or_try_init(|| Mutex::new(Worker::spawn()?))
+            .map_err(|e| anyhow!(e.to_string()))
     }
 
     pub fn call(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -66,4 +74,3 @@ impl Worker {
         Ok(v.get("result").cloned().unwrap_or(json!({})))
     }
 }
-

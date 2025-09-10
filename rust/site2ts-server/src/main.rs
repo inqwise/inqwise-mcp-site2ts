@@ -196,10 +196,7 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
         .and_then(|v| v.as_str())
         .unwrap_or(&Ulid::new().to_string())
         .to_string();
-    let pages = res
-        .get("pages")
-        .cloned()
-        .unwrap_or_else(|| json!([]));
+    let pages = res.get("pages").cloned().unwrap_or_else(|| json!([]));
 
     let sitemap_dir = PathBuf::from(".site2ts").join("cache").join("sitemaps");
     ensure_dir(&sitemap_dir)?;
@@ -217,7 +214,12 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
     });
     let path = sitemap_dir.join(format!("{}.json", site_map_id));
     write_json_pretty(&path, &sitemap)?;
-    log_ndjson(&job_id, "crawl", "Crawl stub completed", json!({ "pages": sitemap["pages"].as_array().map(|a| a.len()).unwrap_or(0) }))?;
+    log_ndjson(
+        &job_id,
+        "crawl",
+        "Crawl stub completed",
+        json!({ "pages": sitemap["pages"].as_array().map(|a| a.len()).unwrap_or(0) }),
+    )?;
 
     Ok(json!({
         "jobId": job_id,
@@ -253,9 +255,14 @@ fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
     ensure_dir(&out)?;
     write_json_pretty(&out.join("analysis.json"), &analysis)?;
 
-    log_ndjson(&job_id, "analyze", "Analyze complete", json!({
-        "routes": analysis["routes"].as_array().map(|a| a.len()).unwrap_or(0)
-    }))?;
+    log_ndjson(
+        &job_id,
+        "analyze",
+        "Analyze complete",
+        json!({
+            "routes": analysis["routes"].as_array().map(|a| a.len()).unwrap_or(0)
+        }),
+    )?;
 
     Ok(json!({
         "jobId": job_id,
@@ -292,7 +299,12 @@ fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
         .unwrap_or(".site2ts/staging")
         .to_string();
 
-    log_ndjson(&job_id, "scaffold", "Scaffold prepared", json!({ "outDir": out_dir }))?;
+    log_ndjson(
+        &job_id,
+        "scaffold",
+        "Scaffold prepared",
+        json!({ "outDir": out_dir }),
+    )?;
 
     Ok(json!({
         "jobId": job_id,
@@ -329,12 +341,24 @@ async fn main() -> Result<()> {
 
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
-        let line = match line { Ok(l) => l, Err(e) => { error!(?e, "stdin read error"); break; } };
-        if line.trim().is_empty() { continue; }
+        let line = match line {
+            Ok(l) => l,
+            Err(e) => {
+                error!(?e, "stdin read error");
+                break;
+            }
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
         let req: RpcRequest = match serde_json::from_str(&line) {
             Ok(r) => r,
             Err(e) => {
-                respond(None, Some(json!({"code": -32700, "message": format!("parse error: {}", e)})), None);
+                respond(
+                    None,
+                    Some(json!({"code": -32700, "message": format!("parse error: {}", e)})),
+                    None,
+                );
                 continue;
             }
         };
@@ -356,7 +380,11 @@ async fn main() -> Result<()> {
         };
         match res {
             Ok(v) => respond(Some(v), None, id),
-            Err(e) => respond(None, Some(json!({"code": -32601, "message": e.to_string()})), id),
+            Err(e) => respond(
+                None,
+                Some(json!({"code": -32601, "message": e.to_string()})),
+                id,
+            ),
         }
         io::stdout().flush().ok();
     }
