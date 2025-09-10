@@ -4,6 +4,10 @@ import { analyze } from './analyze';
 import { scaffold } from './scaffold';
 import { generate } from './generate';
 import { diff as doDiff } from './diff';
+import { audit as doAudit } from './audit';
+import { apply as doApply } from './apply';
+import { assets as doAssets } from './assets';
+import { pack as doPack } from './pack';
 
 type Json = any;
 
@@ -68,6 +72,30 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
       const threshold = typeof params?.threshold === 'number' ? (params.threshold as number) : 0.01;
       if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
       return await doDiff(generationId, baselines, viewport, threshold);
+    }
+    case 'audit': {
+      const generationId = (params?.generationId as string) || '';
+      const tsStrict = Boolean(params?.tsStrict ?? true);
+      const eslintConfig = (params?.eslintConfig as string) || 'recommended';
+      if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
+      return await doAudit(generationId, tsStrict, eslintConfig);
+    }
+    case 'apply': {
+      const generationId = (params?.generationId as string) || '';
+      const target = (params?.target as string) || './';
+      const dryRun = Boolean(params?.dryRun ?? false);
+      if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
+      return await doApply(generationId, target, dryRun);
+    }
+    case 'assets': {
+      const id = (params?.siteMapId as string) || (params?.generationId as string) || '';
+      if (!id) throw Object.assign(new Error('id required'), { code: -32602 });
+      return await doAssets(id);
+    }
+    case 'pack': {
+      const generationId = (params?.generationId as string) || '';
+      if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
+      return await doPack(generationId);
     }
     default:
       throw Object.assign(new Error('method not found'), { code: -32601 });
