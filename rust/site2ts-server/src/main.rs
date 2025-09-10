@@ -189,13 +189,13 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
     let job_id = res
         .get("jobId")
         .and_then(|v| v.as_str())
-        .unwrap_or(&Ulid::new().to_string())
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
     let site_map_id = res
         .get("siteMapId")
         .and_then(|v| v.as_str())
-        .unwrap_or(&Ulid::new().to_string())
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
     let pages = res.get("pages").cloned().unwrap_or_else(|| json!([]));
 
     let sitemap_dir = PathBuf::from(".site2ts").join("cache").join("sitemaps");
@@ -237,13 +237,13 @@ fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
     let job_id = res
         .get("jobId")
         .and_then(|v| v.as_str())
-        .unwrap_or(&Ulid::new().to_string())
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
     let analysis_id = res
         .get("analysisId")
         .and_then(|v| v.as_str())
-        .unwrap_or(&Ulid::new().to_string())
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
 
     // Write analysis.json
     let analysis = json!({
@@ -286,13 +286,13 @@ fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
     let job_id = res
         .get("jobId")
         .and_then(|v| v.as_str())
-        .unwrap_or(&Ulid::new().to_string())
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
     let scaffold_id = res
         .get("scaffoldId")
         .and_then(|v| v.as_str())
-        .unwrap_or(&Ulid::new().to_string())
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
     let out_dir = res
         .get("outDir")
         .and_then(|v| v.as_str())

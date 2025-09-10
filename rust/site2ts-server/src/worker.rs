@@ -10,6 +10,8 @@ use ulid::Ulid;
 static WORKER: OnceCell<Mutex<Worker>> = OnceCell::new();
 
 pub struct Worker {
+    // Keep process alive; never read directly
+    #[allow(dead_code)]
     child: Child,
     stdin: ChildStdin,
     stdout: std::io::BufReader<ChildStdout>,
