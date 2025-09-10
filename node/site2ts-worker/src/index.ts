@@ -1,6 +1,7 @@
 import readline from 'node:readline';
 import { ulid } from 'ulid';
 import { crawl, CrawlParams } from './crawl.js';
+import { analyze } from './analyze.js';
 
 type Json = any;
 
@@ -36,6 +37,11 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
       const p = params as CrawlParams;
       if (!p?.startUrl) throw Object.assign(new Error('startUrl required'), { code: -32602 });
       return await crawl(p);
+    }
+    case 'analyze': {
+      const siteMapId = (params?.siteMapId as string) || '';
+      if (!siteMapId) throw Object.assign(new Error('siteMapId required'), { code: -32602 });
+      return await analyze(siteMapId);
     }
     default:
       throw Object.assign(new Error('method not found'), { code: -32601 });

@@ -212,6 +212,45 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
     }))
 }
 
+fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
+    // Delegate to worker and persist analysis.json
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call("analyze", json!({ "siteMapId": params.siteMapId }))?;
+
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&Ulid::new().to_string())
+        .to_string();
+    let analysis_id = res
+        .get("analysisId")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&Ulid::new().to_string())
+        .to_string();
+
+    // Write analysis.json
+    let analysis = json!({
+        "routes": res.get("routes").cloned().unwrap_or(json!([])),
+        "forms": res.get("forms").cloned().unwrap_or(json!([])),
+        "assets": res.get("assets").cloned().unwrap_or(json!({"images":[],"fonts":[],"styles":[]})),
+    });
+    let out = PathBuf::from(".site2ts").join("staging").join("meta");
+    ensure_dir(&out)?;
+    write_json_pretty(&out.join("analysis.json"), &analysis)?;
+
+    log_ndjson(&job_id, "analyze", "Analyze complete", json!({
+        "routes": analysis["routes"].as_array().map(|a| a.len()).unwrap_or(0)
+    }))?;
+
+    Ok(json!({
+        "jobId": job_id,
+        "analysisId": analysis_id,
+        "routes": analysis["routes"].clone(),
+        "assets": analysis["assets"].clone()
+    }))
+}
+
 fn respond(result: Option<Value>, error: Option<Value>, id: Option<Value>) {
     let resp = RpcResponse {
         jsonrpc: "2.0",
@@ -229,6 +268,11 @@ fn respond(result: Option<Value>, error: Option<Value>, id: Option<Value>) {
         .unwrap()
     });
     println!("{}", s);
+#[derive(Debug, Deserialize)]
+struct AnalyzeParams {
+    siteMapId: String,
+}
+
 }
 
 #[tokio::main]
@@ -257,6 +301,9 @@ async fn main() -> Result<()> {
             "crawl" => serde_json::from_value::<CrawlParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
                 .and_then(|p| handle_crawl(p)),
+            "analyze" => serde_json::from_value::<AnalyzeParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(|p| handle_analyze(p)),
             _ => Err(anyhow!("method not found")),
         };
         match res {
