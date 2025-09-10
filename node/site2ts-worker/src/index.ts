@@ -3,8 +3,9 @@ import { crawl, CrawlParams } from './crawl';
 import { analyze } from './analyze';
 import { scaffold } from './scaffold';
 import { generate } from './generate';
+import { diff as doDiff } from './diff';
 
-type Json = unknown;
+type Json = any;
 
 type RpcRequest = {
   jsonrpc?: string;
@@ -21,11 +22,9 @@ type RpcResponse = {
 };
 
 function respond(ok: boolean, payload: Json, id?: RpcRequest['id']) {
-  const resp: RpcResponse = {
-    jsonrpc: '2.0',
-    ...(ok ? { result: payload } : { error: payload }),
-    id,
-  };
+  const resp: RpcResponse = ok
+    ? { jsonrpc: '2.0', result: payload, id }
+    : { jsonrpc: '2.0', error: payload as { code: number; message: string; data?: Json }, id };
   // eslint-disable-next-line no-console
   console.log(JSON.stringify(resp));
 }
@@ -57,6 +56,18 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
       if (!analysisId) throw Object.assign(new Error('analysisId required'), { code: -32602 });
       if (!scaffoldId) throw Object.assign(new Error('scaffoldId required'), { code: -32602 });
       return await generate(analysisId, scaffoldId, tailwindMode);
+    }
+    case 'diff': {
+      const generationId = (params?.generationId as string) || '';
+      const baselines = (params?.baselines as 'recrawl' | 'cached') || 'recrawl';
+      const viewport = (params?.viewport as { w: number; h: number; deviceScale: number }) || {
+        w: 1280,
+        h: 800,
+        deviceScale: 1,
+      };
+      const threshold = typeof params?.threshold === 'number' ? (params.threshold as number) : 0.01;
+      if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
+      return await doDiff(generationId, baselines, viewport, threshold);
     }
     default:
       throw Object.assign(new Error('method not found'), { code: -32601 });

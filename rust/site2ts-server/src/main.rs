@@ -364,6 +364,46 @@ fn handle_generate(params: GenerateParams) -> Result<Value> {
     }))
 }
 
+#[derive(Debug, Deserialize)]
+struct DiffParams {
+    #[serde(rename = "generationId")]
+    generation_id: String,
+    #[serde(default)]
+    baselines: Option<String>,
+    #[serde(default)]
+    viewport: Option<Value>,
+    #[serde(default)]
+    threshold: Option<f64>,
+}
+
+fn handle_diff(params: DiffParams) -> Result<Value> {
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call(
+        "diff",
+        json!({
+            "generationId": params.generation_id,
+            "baselines": params.baselines.unwrap_or_else(|| "recrawl".into()),
+            "viewport": params.viewport.unwrap_or_else(|| json!({"w":1280,"h":800,"deviceScale":1})),
+            "threshold": params.threshold.unwrap_or(0.01),
+        }),
+    )?;
+
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    let diff_id = res
+        .get("diffId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+
+    log_ndjson(&job_id, "diff", "Visual diff complete", json!({ "diffId": diff_id }))?;
+    Ok(res)
+}
+
 fn respond(result: Option<Value>, error: Option<Value>, id: Option<Value>) {
     let resp = RpcResponse {
         jsonrpc: "2.0",
@@ -430,6 +470,9 @@ async fn main() -> Result<()> {
             "generate" => serde_json::from_value::<GenerateParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
                 .and_then(handle_generate),
+            "diff" => serde_json::from_value::<DiffParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(handle_diff),
             _ => Err(anyhow!("method not found")),
         };
         match res {
