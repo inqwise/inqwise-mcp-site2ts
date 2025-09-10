@@ -2,6 +2,7 @@ import readline from 'node:readline';
 import { ulid } from 'ulid';
 import { crawl, CrawlParams } from './crawl.js';
 import { analyze } from './analyze.js';
+import { scaffold } from './scaffold.js';
 
 type Json = any;
 
@@ -42,6 +43,12 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
       const siteMapId = (params?.siteMapId as string) || '';
       if (!siteMapId) throw Object.assign(new Error('siteMapId required'), { code: -32602 });
       return await analyze(siteMapId);
+    }
+    case 'scaffold': {
+      const analysisId = (params?.analysisId as string) || '';
+      if (!analysisId) throw Object.assign(new Error('analysisId required'), { code: -32602 });
+      const appRouter = Boolean(params?.appRouter ?? true);
+      return await scaffold({ analysisId, appRouter });
     }
     default:
       throw Object.assign(new Error('method not found'), { code: -32601 });

@@ -69,6 +69,18 @@ struct CrawlParams {
     obeyRobots: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct AnalyzeParams {
+    siteMapId: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ScaffoldParams {
+    analysisId: String,
+    #[serde(default = "default_true")] // default true
+    appRouter: bool,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -251,6 +263,42 @@ fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
     }))
 }
 
+fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
+    let worker_mutex = Worker::get()?;
+    let mut w = worker_mutex.lock().unwrap();
+    let res = w.call(
+        "scaffold",
+        json!({
+            "analysisId": params.analysisId,
+            "appRouter": params.appRouter,
+        }),
+    )?;
+
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&Ulid::new().to_string())
+        .to_string();
+    let scaffold_id = res
+        .get("scaffoldId")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&Ulid::new().to_string())
+        .to_string();
+    let out_dir = res
+        .get("outDir")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".site2ts/staging")
+        .to_string();
+
+    log_ndjson(&job_id, "scaffold", "Scaffold prepared", json!({ "outDir": out_dir }))?;
+
+    Ok(json!({
+        "jobId": job_id,
+        "scaffoldId": scaffold_id,
+        "outDir": out_dir
+    }))
+}
+
 fn respond(result: Option<Value>, error: Option<Value>, id: Option<Value>) {
     let resp = RpcResponse {
         jsonrpc: "2.0",
@@ -268,11 +316,6 @@ fn respond(result: Option<Value>, error: Option<Value>, id: Option<Value>) {
         .unwrap()
     });
     println!("{}", s);
-#[derive(Debug, Deserialize)]
-struct AnalyzeParams {
-    siteMapId: String,
-}
-
 }
 
 #[tokio::main]
@@ -304,6 +347,9 @@ async fn main() -> Result<()> {
             "analyze" => serde_json::from_value::<AnalyzeParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
                 .and_then(|p| handle_analyze(p)),
+            "scaffold" => serde_json::from_value::<ScaffoldParams>(req.params.clone())
+                .map_err(|e| anyhow!(e.to_string()))
+                .and_then(|p| handle_scaffold(p)),
             _ => Err(anyhow!("method not found")),
         };
         match res {
