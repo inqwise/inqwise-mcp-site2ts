@@ -14,6 +14,7 @@ use worker::Worker;
 #[derive(Debug, Deserialize)]
 struct RpcRequest {
     #[serde(default)]
+    #[allow(dead_code)]
     jsonrpc: Option<String>,
     method: String,
     #[serde(default)]
@@ -35,7 +36,8 @@ struct RpcResponse<'a> {
 
 #[derive(Debug, Deserialize)]
 struct InitParams {
-    projectRoot: String,
+    #[serde(rename = "projectRoot")]
+    project_root: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,45 +50,50 @@ struct Pinned {
 
 #[derive(Debug, Deserialize)]
 struct CrawlParams {
-    startUrl: String,
-    #[serde(default = "default_true")] // sameOrigin default true
-    sameOrigin: bool,
-    #[serde(default = "default_max_pages")] // 50
-    maxPages: u32,
-    #[serde(default = "default_max_depth")] // 5
-    maxDepth: u32,
+    #[serde(rename = "startUrl")]
+    start_url: String,
+    #[serde(default = "default_true", rename = "sameOrigin")] // sameOrigin default true
+    same_origin: bool,
+    #[serde(default = "default_max_pages", rename = "maxPages")] // 50
+    max_pages: u32,
+    #[serde(default = "default_max_depth", rename = "maxDepth")] // 5
+    max_depth: u32,
     #[serde(default)]
     allow: Vec<String>,
     #[serde(default)]
     deny: Vec<String>,
-    #[serde(default = "default_concurrency")] // 4
+    #[serde(default = "default_concurrency")]
     concurrency: u32,
-    #[serde(default)]
-    delayMs: u64,
-    #[serde(default = "default_true")] // true
-    useSitemap: bool,
-    #[serde(default = "default_true")] // true
-    obeyRobots: bool,
+    #[serde(default, rename = "delayMs")]
+    delay_ms: u64,
+    #[serde(default = "default_true", rename = "useSitemap")] // true
+    use_sitemap: bool,
+    #[serde(default = "default_true", rename = "obeyRobots")] // true
+    obey_robots: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct AnalyzeParams {
-    siteMapId: String,
+    #[serde(rename = "siteMapId")]
+    site_map_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct ScaffoldParams {
-    analysisId: String,
-    #[serde(default = "default_true")] // default true
-    appRouter: bool,
+    #[serde(rename = "analysisId")]
+    analysis_id: String,
+    #[serde(default = "default_true", rename = "appRouter")] // default true
+    app_router: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct GenerateParams {
-    analysisId: String,
-    scaffoldId: String,
-    #[serde(default)]
-    tailwindMode: String,
+    #[serde(rename = "analysisId")]
+    analysis_id: String,
+    #[serde(rename = "scaffoldId")]
+    scaffold_id: String,
+    #[serde(default, rename = "tailwindMode")]
+    tailwind_mode: String,
 }
 
 fn default_true() -> bool {
@@ -143,7 +150,7 @@ fn log_ndjson(job_id: &str, phase: &str, msg: &str, data: Value) -> Result<()> {
 
 fn handle_init(params: InitParams) -> Result<Value> {
     // Prepare sandbox directories
-    let root = PathBuf::from(&params.projectRoot);
+    let root = PathBuf::from(&params.project_root);
     let site2ts = root.join(".site2ts");
     ensure_dir(&site2ts.join("staging"))?;
     ensure_dir(&site2ts.join("cache").join("pw"))?;
@@ -181,16 +188,16 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
     let res = w.call(
         "crawl",
         json!({
-            "startUrl": params.startUrl,
-            "sameOrigin": params.sameOrigin,
-            "maxPages": params.maxPages,
-            "maxDepth": params.maxDepth,
+            "startUrl": params.start_url,
+            "sameOrigin": params.same_origin,
+            "maxPages": params.max_pages,
+            "maxDepth": params.max_depth,
             "allow": params.allow,
             "deny": params.deny,
             "concurrency": params.concurrency,
-            "delayMs": params.delayMs,
-            "useSitemap": params.useSitemap,
-            "obeyRobots": params.obeyRobots
+            "delayMs": params.delay_ms,
+            "useSitemap": params.use_sitemap,
+            "obeyRobots": params.obey_robots
         }),
     )?;
 
@@ -210,14 +217,14 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
     ensure_dir(&sitemap_dir)?;
     let sitemap = json!({
         "siteMapId": site_map_id,
-        "startUrl": params.startUrl,
-        "sameOrigin": params.sameOrigin,
-        "maxPages": params.maxPages,
-        "maxDepth": params.maxDepth,
+        "startUrl": params.start_url,
+        "sameOrigin": params.same_origin,
+        "maxPages": params.max_pages,
+        "maxDepth": params.max_depth,
         "allow": params.allow,
         "deny": params.deny,
-        "useSitemap": params.useSitemap,
-        "obeyRobots": params.obeyRobots,
+        "useSitemap": params.use_sitemap,
+        "obeyRobots": params.obey_robots,
         "pages": pages
     });
     let path = sitemap_dir.join(format!("{}.json", site_map_id));
@@ -240,7 +247,7 @@ fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
     // Delegate to worker and persist analysis.json
     let worker_mutex = Worker::get()?;
     let mut w = worker_mutex.lock().unwrap();
-    let res = w.call("analyze", json!({ "siteMapId": params.siteMapId }))?;
+    let res = w.call("analyze", json!({ "siteMapId": params.site_map_id }))?;
 
     let job_id = res
         .get("jobId")
@@ -286,8 +293,8 @@ fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
     let res = w.call(
         "scaffold",
         json!({
-            "analysisId": params.analysisId,
-            "appRouter": params.appRouter,
+            "analysisId": params.analysis_id,
+            "appRouter": params.app_router,
         }),
     )?;
 
@@ -327,9 +334,9 @@ fn handle_generate(params: GenerateParams) -> Result<Value> {
     let res = w.call(
         "generate",
         json!({
-            "analysisId": params.analysisId,
-            "scaffoldId": params.scaffoldId,
-            "tailwindMode": if params.tailwindMode.is_empty() { "full" } else { &params.tailwindMode },
+            "analysisId": params.analysis_id,
+            "scaffoldId": params.scaffold_id,
+            "tailwindMode": if params.tailwind_mode.is_empty() { "full" } else { &params.tailwind_mode },
         }),
     )?;
 
@@ -410,19 +417,19 @@ async fn main() -> Result<()> {
         let res = match req.method.as_str() {
             "init" => serde_json::from_value::<InitParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
-                .and_then(|p| handle_init(p)),
+                .and_then(handle_init),
             "crawl" => serde_json::from_value::<CrawlParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
-                .and_then(|p| handle_crawl(p)),
+                .and_then(handle_crawl),
             "analyze" => serde_json::from_value::<AnalyzeParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
-                .and_then(|p| handle_analyze(p)),
+                .and_then(handle_analyze),
             "scaffold" => serde_json::from_value::<ScaffoldParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
-                .and_then(|p| handle_scaffold(p)),
+                .and_then(handle_scaffold),
             "generate" => serde_json::from_value::<GenerateParams>(req.params.clone())
                 .map_err(|e| anyhow!(e.to_string()))
-                .and_then(|p| handle_generate(p)),
+                .and_then(handle_generate),
             _ => Err(anyhow!("method not found")),
         };
         match res {
