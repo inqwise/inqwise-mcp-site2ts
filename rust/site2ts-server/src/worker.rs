@@ -45,9 +45,7 @@ impl Worker {
     }
 
     pub fn get() -> Result<&'static Mutex<Worker>> {
-        WORKER
-            .get_or_try_init(|| Mutex::new(Worker::spawn()?))
-            .map_err(|e| anyhow!(e.to_string()))
+        WORKER.get_or_try_init(|| Worker::spawn().map(Mutex::new))
     }
 
     pub fn call(&mut self, method: &str, params: Value) -> Result<Value> {
