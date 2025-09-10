@@ -102,7 +102,9 @@ fn ensure_dir(path: &Path) -> Result<()> {
 }
 
 fn write_json_pretty(path: &Path, value: &Value) -> Result<()> {
-    if let Some(parent) = path.parent() { ensure_dir(parent)?; }
+    if let Some(parent) = path.parent() {
+        ensure_dir(parent)?;
+    }
     let mut f = fs::File::create(path).with_context(|| format!("create {}", path.display()))?;
     let s = serde_json::to_string_pretty(value)?;
     f.write_all(s.as_bytes())?;
