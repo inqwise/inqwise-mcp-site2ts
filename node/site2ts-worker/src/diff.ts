@@ -4,6 +4,10 @@ import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulid';
+import { chromium } from 'playwright-core';
+import getPort from 'get-port';
+import { run, ensureDir } from './utils';
+import { spawn } from 'node:child_process';
 
 type Analysis = {
   routes: { route: string; sourceUrl: string; dynamic: boolean; params?: string[] }[];
@@ -13,9 +17,7 @@ function sha1(s: string) {
   return createHash('sha1').update(s).digest('hex');
 }
 
-async function ensureDir(p: string) {
-  await fs.mkdir(p, { recursive: true });
-}
+// ensureDir from utils
 
 function routeToFolder(route: string): string {
   if (route === '/' || route === '') return 'root';
@@ -50,13 +52,27 @@ export async function diff(
   const outRoot = path.join('.site2ts', 'reports', 'diff', diffId);
   const perRoute: { route: string; diffRatio: number; artifacts: { baseline: string; actual: string; diff: string } }[] = [];
 
+  // Attempt to start Next.js app from staging for actual screenshots
+  const stagingDir = path.join('.site2ts', 'staging');
+  const port = await getPort({ port: 3100 });
+  let serverProc: { kill: () => void } | null = null;
+  try {
+    await run('npm', ['run', 'build'], stagingDir); // may no-op if not installed; audit ensures deps earlier
+    serverProc = spawnServer(stagingDir, port);
+    await waitForHttp(`http://localhost:${port}/`, 20000);
+  } catch {
+    serverProc = null;
+  }
+
   for (const r of analysis.routes) {
     // Baseline: crawled screenshot
     const baseHash = sha1(r.sourceUrl);
     const baselinePath = path.join('.site2ts', 'cache', 'crawl', baseHash, 'snap.png');
 
-    // Actual: MVP — reuse baseline until Next.js render is wired
-    const actualPath = baselinePath; // TODO: render generated app and capture
+    // Actual: if server started, render route; otherwise fallback to baseline
+    const actualPath = serverProc
+      ? await renderActual(`http://localhost:${port}${r.route}`, viewport, outRoot, r.route)
+      : baselinePath;
 
     try {
       const baselinePng = await readPng(baselinePath);
@@ -116,4 +132,34 @@ export async function diff(
   const failed = perRoute.length - passed;
 
   return { jobId, diffId, perRoute, summary: { passed, failed, avg } };
+}
+
+async function renderActual(url: string, vp: { w: number; h: number; deviceScale: number }, outRoot: string, route: string) {
+  const folder = path.join(outRoot, routeToFolder(route));
+  await ensureDir(folder);
+  const outActual = path.join(folder, 'actual.png');
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ viewport: { width: vp.w, height: vp.h }, deviceScaleFactor: vp.deviceScale });
+  const page = await context.newPage();
+  await page.goto(url, { waitUntil: 'networkidle' });
+  await page.screenshot({ path: outActual, fullPage: true });
+  await context.close();
+  await browser.close();
+  return outActual;
+}
+
+function spawnServer(cwd: string, port: number) {
+  const child = spawn('npm', ['run', 'start', '--', '-p', String(port)], { cwd, env: process.env });
+  return { kill: () => child.kill() };
+}
+
+async function waitForHttp(url: string, timeoutMs: number) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url, { method: 'GET' });
+      if (res.ok) return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }

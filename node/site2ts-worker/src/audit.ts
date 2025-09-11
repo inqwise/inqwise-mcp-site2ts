@@ -1,18 +1,7 @@
-import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ulid } from 'ulid';
-
-function run(cmd: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, env: process.env });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d) => (stdout += d.toString()));
-    child.stderr.on('data', (d) => (stderr += d.toString()));
-    child.on('close', (code) => resolve({ code: code ?? 0, stdout, stderr }));
-  });
-}
+import { ensureDeps, run } from './utils';
 
 export async function audit(_generationId: string, tsStrict: boolean, eslintConfig: string) {
   const jobId = ulid();
@@ -20,6 +9,7 @@ export async function audit(_generationId: string, tsStrict: boolean, eslintConf
   const staging = path.join('.site2ts', 'staging');
   const reportsDir = path.join('.site2ts', 'reports');
   await fs.mkdir(reportsDir, { recursive: true });
+  await ensureDeps(staging);
 
   // TypeScript tsc
   const tscArgs = ['tsc', '--noEmit', '--pretty', 'false', '--incremental', 'false'];
@@ -62,4 +52,3 @@ export async function audit(_generationId: string, tsStrict: boolean, eslintConf
     eslint: { errors: eslintErrors, warnings: eslintWarnings, reportPath: eslintReportPath },
   };
 }
-
