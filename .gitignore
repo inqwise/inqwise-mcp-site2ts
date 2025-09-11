@@ -25,14 +25,17 @@ Cargo.lock
 .env.*
 .env.local
 
-# Site2TS sandbox
-.site2ts/cache/
-.site2ts/logs/
-.site2ts/exports/
-.site2ts/reports/
+# Site2TS sandbox (generated; exclude entire sandbox)
+.site2ts/
+# If you want to keep pins in VCS, comment the line above and ignore subfolders instead:
+# .site2ts/cache/
+# .site2ts/logs/
+# .site2ts/exports/
+# .site2ts/reports/
+# .site2ts/staging/
+# .site2ts/upgrades/
 
 # Misc
 *.tgz
 *.tar
 *.tar.gz
-
