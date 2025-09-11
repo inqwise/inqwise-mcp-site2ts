@@ -36,13 +36,20 @@ function htmlToTsx(html: string): string {
   return out;
 }
 
-async function writePageTsx(appDir: string, route: string, bodyHtml: string) {
+async function writePageTsx(
+  appDir: string,
+  route: string,
+  bodyHtml: string,
+  opts?: { withFallbackCss?: boolean },
+) {
   const tsx = htmlToTsx(bodyHtml);
   const dir = path.join(appDir, routeToDir(route));
   await ensureDir(dir);
   const file = path.join(dir, 'page.tsx');
   const banner = `// TODO: tailwindify — fallback styling may be present\n`;
-  const contents = `${banner}export default function Page() {\n  return (\n    <main>\n      {/* Auto-generated content (MVP). Some inline styles may remain; see reports/tailwind/fallbacks.json */}\n      <>${tsx}</>\n    </main>\n  );\n}\n`;
+  const imports = opts?.withFallbackCss ? `import styles from './page.module.css'\n` : '';
+  const mainClass = opts?.withFallbackCss ? ` className={styles.fallback}` : '';
+  const contents = `${banner}${imports}export default function Page() {\n  return (\n    <main${mainClass}>\n      {/* Auto-generated content (MVP). Some inline styles may remain; see reports/tailwind/fallbacks.json */}\n      <>${tsx}</>\n    </main>\n  );\n}\n`;
   await fs.writeFile(file, contents, 'utf-8');
 }
 
@@ -101,6 +108,7 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
       $('script').remove();
       // Map inline styles to Tailwind utilities where feasible
       let unmappedCount = 0;
+      const restStyles: string[] = [];
       $('[style]').each((_: number, el: any) => {
         const style = ($(el).attr('style') || '').trim();
         if (!style) return;
@@ -113,12 +121,28 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
         if (rest) {
           $(el).attr('style', rest);
           unmappedCount += 1;
+          restStyles.push(rest);
         } else {
           $(el).removeAttr('style');
         }
       });
       const bodyHtml = $('body').html() || '';
-      await writePageTsx(appDir, r.route, bodyHtml);
+      await writePageTsx(appDir, r.route, bodyHtml, { withFallbackCss: unmappedCount > 0 });
+      // Emit CSS module with TODOs when there are unmapped styles
+      if (unmappedCount > 0) {
+        const dir = path.join(appDir, routeToDir(r.route));
+        const cssPath = path.join(dir, 'page.module.css');
+        const header = [
+          '/* Auto-generated CSS module for remaining styles */',
+          '/* TODO: tailwindify — consider mapping these to utilities */',
+          '.fallback {',
+          '  /* Remaining inline styles were detected on elements within this page. */',
+          '}',
+          '',
+        ].join('\n');
+        const comments = restStyles.slice(0, 50).map((s) => `/* ${s} */`).join('\n');
+        await fs.writeFile(cssPath, `${header}\n${comments}\n`);
+      }
       fallbackReport.push({ route: r.route, unmappedInlineStyles: unmappedCount });
     } catch {
       // skip missing page.html
