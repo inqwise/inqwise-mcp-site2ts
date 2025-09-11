@@ -43,3 +43,6 @@ MVP spec authored; implementation tasks planned. See `PROGRESS.md`.
 
 ## License
 Apache-2.0 — see `LICENSE` for details.
+
+## Runbook
+See `docs/RUNBOOK.md` for the end-to-end flow and artifact locations.

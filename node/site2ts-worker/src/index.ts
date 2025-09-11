@@ -8,6 +8,7 @@ import { audit as doAudit } from './audit';
 import { apply as doApply } from './apply';
 import { assets as doAssets } from './assets';
 import { pack as doPack } from './pack';
+import { initRuntime } from './init';
 
 type Json = any;
 
@@ -96,6 +97,9 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
       const generationId = (params?.generationId as string) || '';
       if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
       return await doPack(generationId);
+    }
+    case 'initRuntime': {
+      return await initRuntime();
     }
     default:
       throw Object.assign(new Error('method not found'), { code: -32601 });

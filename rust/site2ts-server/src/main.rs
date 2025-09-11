@@ -175,10 +175,13 @@ fn handle_init(params: InitParams) -> Result<Value> {
         ts: "5.x".to_string(),
         playwright: "1.x".to_string(),
     };
-    Ok(serde_json::to_value(json!({
-        "ok": true,
-        "pinned": pinned
-    }))?)
+    // Ask worker to ensure runtime deps (Chromium) are available
+    if let Ok(mutex) = Worker::get() {
+        if let Ok(mut w) = mutex.lock() {
+            let _ = w.call("initRuntime", json!({}));
+        }
+    }
+    Ok(serde_json::to_value(json!({ "ok": true, "pinned": pinned }))?)
 }
 
 fn handle_crawl(params: CrawlParams) -> Result<Value> {
