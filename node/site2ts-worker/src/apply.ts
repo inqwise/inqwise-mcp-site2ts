@@ -44,7 +44,9 @@ export async function apply(_generationId: string, target: string, dryRun: boole
     for await (const file of walk(targetApp)) {
       const rel = path.relative(target, file).replaceAll('\\', '/');
       if (isExcluded(rel)) continue;
-      if (rel.startsWith('app/') && !stagingSet.has(rel)) {
+      const isManagedAsset = rel.startsWith('app/(site2ts)/assets/');
+      const isPageFile = rel.startsWith('app/') && rel.endsWith('/page.tsx');
+      if ((isManagedAsset || isPageFile) && !stagingSet.has(rel)) {
         // Candidate for deletion: managed app/ file not in staging
         if (dryRun) {
           deletedFiles.removed.push(rel);

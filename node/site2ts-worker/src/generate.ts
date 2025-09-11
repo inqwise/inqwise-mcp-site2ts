@@ -42,7 +42,7 @@ async function writePageTsx(appDir: string, route: string, bodyHtml: string) {
   await ensureDir(dir);
   const file = path.join(dir, 'page.tsx');
   const banner = `// TODO: tailwindify — fallback styling may be present\n`;
-  const contents = `${banner}export default function Page() {\n  return (\n    <main>\n      {/* Auto-generated content (MVP) */}\n      <>${tsx}</>\n    </main>\n  );\n}\n`;
+  const contents = `${banner}export default function Page() {\n  return (\n    <main>\n      {/* Auto-generated content (MVP). Some inline styles may remain; see reports/tailwind/fallbacks.json */}\n      <>${tsx}</>\n    </main>\n  );\n}\n`;
   await fs.writeFile(file, contents, 'utf-8');
 }
 
@@ -217,16 +217,51 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
         else if (v === 'inline-block') tw.push('inline-block');
         else rest.push(`${k}: ${v}`);
         break;
+      case 'justify-content':
+        if (v === 'flex-start') tw.push('justify-start');
+        else if (v === 'center') tw.push('justify-center');
+        else if (v === 'flex-end') tw.push('justify-end');
+        else if (v === 'space-between') tw.push('justify-between');
+        else if (v === 'space-around') tw.push('justify-around');
+        else if (v === 'space-evenly') tw.push('justify-evenly');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'align-items':
+        if (v === 'stretch') tw.push('items-stretch');
+        else if (v === 'center') tw.push('items-center');
+        else if (v === 'flex-start') tw.push('items-start');
+        else if (v === 'flex-end') tw.push('items-end');
+        else if (v === 'baseline') tw.push('items-baseline');
+        else rest.push(`${k}: ${v}`);
+        break;
       case 'text-align':
         if (v === 'left' || v === 'center' || v === 'right' || v === 'justify') tw.push(`text-${v}`);
         else rest.push(`${k}: ${v}`);
         break;
+      case 'font-size': {
+        const m = v.match(/^(\d+)(px)?$/);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (n <= 12) tw.push('text-xs');
+          else if (n <= 14) tw.push('text-sm');
+          else if (n <= 16) tw.push('text-base');
+          else if (n <= 18) tw.push('text-lg');
+          else if (n <= 20) tw.push('text-xl');
+          else rest.push(`${k}: ${v}`);
+        } else {
+          rest.push(`${k}: ${v}`);
+        }
+        break;
+      }
       case 'font-weight':
         if (v === 'bold') tw.push('font-bold');
         else if (v === '600' || v === 'semibold') tw.push('font-semibold');
         else if (v === '500' || v === 'medium') tw.push('font-medium');
         else if (v === '300' || v === 'light') tw.push('font-light');
         else rest.push(`${k}: ${v}`);
+        break;
+      case 'gap':
+        mapSpacing('gap', v);
         break;
       case 'color':
         if (v === 'black' || v === '#000' || v === '#000000') tw.push('text-black');
@@ -238,6 +273,23 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
         else if (v === 'white' || v === '#fff' || v === '#ffffff') tw.push('bg-white');
         else rest.push(`${k}: ${v}`);
         break;
+      case 'border':
+      case 'border-width':
+        if (v === '1px' || v.startsWith('1px ')) tw.push('border');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'border-radius': {
+        const m = v.match(/^(\d+)(px)?$/);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (n <= 4) tw.push('rounded');
+          else if (n <= 8) tw.push('rounded-md');
+          else if (n <= 999) tw.push('rounded-lg');
+          else rest.push(`${k}: ${v}`);
+        } else if (v === '50%') tw.push('rounded-full');
+        else rest.push(`${k}: ${v}`);
+        break;
+      }
       case 'width':
         if (v === '100%' || v === 'auto') tw.push('w-full');
         else rest.push(`${k}: ${v}`);
