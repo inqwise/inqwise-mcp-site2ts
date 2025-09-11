@@ -290,11 +290,25 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
       case 'color':
         if (v === 'black' || v === '#000' || v === '#000000') tw.push('text-black');
         else if (v === 'white' || v === '#fff' || v === '#ffffff') tw.push('text-white');
+        else if (v === '#333' || v === '#333333') tw.push('text-gray-800');
+        else if (v === '#666' || v === '#666666') tw.push('text-gray-600');
+        else if (v === '#999' || v === '#999999') tw.push('text-gray-500');
         else rest.push(`${k}: ${v}`);
         break;
       case 'background-color':
         if (v === 'black' || v === '#000' || v === '#000000') tw.push('bg-black');
         else if (v === 'white' || v === '#fff' || v === '#ffffff') tw.push('bg-white');
+        else if (v === '#333' || v === '#333333') tw.push('bg-gray-800');
+        else if (v === '#666' || v === '#666666') tw.push('bg-gray-600');
+        else if (v === '#999' || v === '#999999') tw.push('bg-gray-500');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'border-color':
+        if (v === 'black' || v === '#000' || v === '#000000') tw.push('border-black');
+        else if (v === 'white' || v === '#fff' || v === '#ffffff') tw.push('border-white');
+        else if (v === '#333' || v === '#333333') tw.push('border-gray-800');
+        else if (v === '#666' || v === '#666666') tw.push('border-gray-600');
+        else if (v === '#999' || v === '#999999') tw.push('border-gray-500');
         else rest.push(`${k}: ${v}`);
         break;
       case 'border':
@@ -320,6 +334,65 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
         break;
       case 'height':
         if (v === '100%' || v === 'auto') tw.push('h-full');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'overflow':
+        if (v === 'hidden') tw.push('overflow-hidden');
+        else if (v === 'auto') tw.push('overflow-auto');
+        else if (v === 'scroll') tw.push('overflow-scroll');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'position':
+        if (v === 'relative') tw.push('relative');
+        else if (v === 'absolute') tw.push('absolute');
+        else if (v === 'fixed') tw.push('fixed');
+        else if (v === 'sticky') tw.push('sticky');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'top':
+        mapSpacing('top', v);
+        break;
+      case 'left':
+        mapSpacing('left', v);
+        break;
+      case 'right':
+        mapSpacing('right', v);
+        break;
+      case 'bottom':
+        mapSpacing('bottom', v);
+        break;
+      case 'text-transform':
+        if (v === 'uppercase' || v === 'lowercase' || v === 'capitalize') tw.push(v);
+        else if (v === 'none') tw.push('normal-case');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'text-decoration':
+        if (v.includes('underline')) tw.push('underline');
+        else if (v === 'none') tw.push('no-underline');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'letter-spacing':
+        if (v === 'normal' || v === '0' || v === '0px') tw.push('tracking-normal');
+        else if (v.endsWith('px')) tw.push('tracking-wide');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'line-height':
+        if (v === 'normal') tw.push('leading-normal');
+        else if (v === '1') tw.push('leading-none');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'background-repeat':
+        if (v === 'no-repeat') tw.push('bg-no-repeat');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'background-size':
+        if (v === 'cover') tw.push('bg-cover');
+        else if (v === 'contain') tw.push('bg-contain');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'object-fit':
+        if (v === 'cover') tw.push('object-cover');
+        else if (v === 'contain') tw.push('object-contain');
         else rest.push(`${k}: ${v}`);
         break;
       default:

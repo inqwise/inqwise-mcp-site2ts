@@ -32,6 +32,24 @@ export async function apply(_generationId: string, target: string, dryRun: boole
   const changedFiles: string[] = [];
   const deletedFiles = { removed: [] as string[], skipped: [] as string[] };
 
+  // Expected pages from analysis
+  function routeToDir(route: string): string {
+    if (route === '/' || route === '') return '';
+    return route.replace(/^\//, '');
+  }
+  const expectedPages = new Set<string>();
+  try {
+    const analysisPath = path.join(staging, 'meta', 'analysis.json');
+    const raw = await fs.readFile(analysisPath, 'utf-8');
+    const analysis = JSON.parse(raw) as { routes?: { route: string }[] };
+    for (const r of analysis.routes || []) {
+      const rel = path.join('app', routeToDir(r.route), 'page.tsx').replaceAll('\\', '/');
+      expectedPages.add(rel);
+    }
+  } catch {
+    // if analysis missing, fall back to stagingSet below
+  }
+
   // Build file sets for deletion analysis (under app/ only)
   const stagingSet = new Set<string>();
   for await (const file of walk(staging)) {
@@ -46,11 +64,25 @@ export async function apply(_generationId: string, target: string, dryRun: boole
       if (isExcluded(rel)) continue;
       const isManagedAsset = rel.startsWith('app/(site2ts)/assets/');
       const isPageFile = rel.startsWith('app/') && rel.endsWith('/page.tsx');
-      if ((isManagedAsset || isPageFile) && !stagingSet.has(rel)) {
+      const presentInStaging = stagingSet.has(rel);
+      const presentInAnalysis = expectedPages.size > 0 ? expectedPages.has(rel) : true;
+      if ((isManagedAsset || isPageFile) && !presentInStaging && !presentInAnalysis) {
         // Candidate for deletion: managed app/ file not in staging
-        if (dryRun) {
-          deletedFiles.removed.push(rel);
-        } else {
+        if (isPageFile) {
+          // Safety: only delete page files that include our auto-generated banner
+          try {
+            const txt = await fs.readFile(file, 'utf-8');
+            if (!txt.includes('Auto-generated content (MVP)')) {
+              deletedFiles.skipped.push(rel);
+              return;
+            }
+          } catch {
+            deletedFiles.skipped.push(rel);
+            return;
+          }
+        }
+        if (dryRun) deletedFiles.removed.push(rel);
+        else {
           await fs.rm(file, { force: true });
           deletedFiles.removed.push(rel);
         }
