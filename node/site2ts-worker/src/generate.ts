@@ -82,6 +82,7 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   const imageMap = await copyImages(assetsDir, analysis.assets?.images || []);
 
   // For each route, read cached page HTML by sourceUrl
+  const fallbackReport: Array<{ route: string; unmappedInlineStyles: number }> = [];
   for (const r of analysis.routes) {
     const hash = sha1(r.sourceUrl);
     const htmlPath = path.join('.site2ts', 'cache', 'crawl', hash, 'page.html');
@@ -96,17 +97,161 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
         const mapped = imageMap[abs];
         if (mapped) $(el).attr('src', `/${mapped}`);
       });
+      // Remove script tags (will add TODO separately if needed)
+      $('script').remove();
+      // Map inline styles to Tailwind utilities where feasible
+      let unmappedCount = 0;
+      $('[style]').each((_: number, el: any) => {
+        const style = ($(el).attr('style') || '').trim();
+        if (!style) return;
+        const { tw, rest } = mapInlineStyleToTw(style);
+        if (tw.length) {
+          const existing = ($(el).attr('class') || '').trim();
+          const merged = (existing ? existing + ' ' : '') + tw.join(' ');
+          $(el).attr('class', merged);
+        }
+        if (rest) {
+          $(el).attr('style', rest);
+          unmappedCount += 1;
+        } else {
+          $(el).removeAttr('style');
+        }
+      });
       const bodyHtml = $('body').html() || '';
       await writePageTsx(appDir, r.route, bodyHtml);
+      fallbackReport.push({ route: r.route, unmappedInlineStyles: unmappedCount });
     } catch {
       // skip missing page.html
     }
   }
 
-  // Track fallbacks (empty MVP placeholder)
+  // Track fallbacks
   const fallbacksPath = path.join('.site2ts', 'reports', 'tailwind', 'fallbacks.json');
   await ensureDir(path.dirname(fallbacksPath));
-  await fs.writeFile(fallbacksPath, JSON.stringify({ pages: analysis.routes.map((r) => r.route) }, null, 2));
+  await fs.writeFile(
+    fallbacksPath,
+    JSON.stringify({ routes: fallbackReport }, null, 2),
+  );
 
   return { jobId, generationId };
+}
+
+function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
+  const entries = style
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const idx = p.indexOf(':');
+      if (idx === -1) return null as any;
+      const key = p.slice(0, idx).trim().toLowerCase();
+      const val = p.slice(idx + 1).trim().toLowerCase();
+      return [key, val] as const;
+    })
+    .filter(Boolean) as Array<readonly [string, string]>;
+  const tw: string[] = [];
+  const rest: Array<string> = [];
+
+  const pxToTw: Record<number, string> = {
+    0: '0',
+    2: '0.5',
+    4: '1',
+    8: '2',
+    12: '3',
+    16: '4',
+    20: '5',
+    24: '6',
+    32: '8',
+    40: '10',
+    48: '12',
+    64: '16',
+  };
+
+  function mapSpacing(prefix: string, v: string) {
+    const m = v.match(/^(\d+)(px)?$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (pxToTw[n]) tw.push(`${prefix}-${pxToTw[n]}`);
+      else rest.push(`${prefix}: ${v}`);
+      return;
+    }
+    if (v === '0') tw.push(`${prefix}-0`);
+    else rest.push(`${prefix}: ${v}`);
+  }
+
+  for (const [k, v] of entries) {
+    switch (k) {
+      case 'margin':
+        mapSpacing('m', v);
+        break;
+      case 'margin-top':
+        mapSpacing('mt', v);
+        break;
+      case 'margin-right':
+        mapSpacing('mr', v);
+        break;
+      case 'margin-bottom':
+        mapSpacing('mb', v);
+        break;
+      case 'margin-left':
+        mapSpacing('ml', v);
+        break;
+      case 'padding':
+        mapSpacing('p', v);
+        break;
+      case 'padding-top':
+        mapSpacing('pt', v);
+        break;
+      case 'padding-right':
+        mapSpacing('pr', v);
+        break;
+      case 'padding-bottom':
+        mapSpacing('pb', v);
+        break;
+      case 'padding-left':
+        mapSpacing('pl', v);
+        break;
+      case 'display':
+        if (v === 'flex') tw.push('flex');
+        else if (v === 'block') tw.push('block');
+        else if (v === 'inline-block') tw.push('inline-block');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'text-align':
+        if (v === 'left' || v === 'center' || v === 'right' || v === 'justify') tw.push(`text-${v}`);
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'font-weight':
+        if (v === 'bold') tw.push('font-bold');
+        else if (v === '600' || v === 'semibold') tw.push('font-semibold');
+        else if (v === '500' || v === 'medium') tw.push('font-medium');
+        else if (v === '300' || v === 'light') tw.push('font-light');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'color':
+        if (v === 'black' || v === '#000' || v === '#000000') tw.push('text-black');
+        else if (v === 'white' || v === '#fff' || v === '#ffffff') tw.push('text-white');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'background-color':
+        if (v === 'black' || v === '#000' || v === '#000000') tw.push('bg-black');
+        else if (v === 'white' || v === '#fff' || v === '#ffffff') tw.push('bg-white');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'width':
+        if (v === '100%' || v === 'auto') tw.push('w-full');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'height':
+        if (v === '100%' || v === 'auto') tw.push('h-full');
+        else rest.push(`${k}: ${v}`);
+        break;
+      default:
+        rest.push(`${k}: ${v}`);
+    }
+  }
+
+  const twUnique = Array.from(new Set(tw));
+  const restStr = rest.length ? rest.join('; ') : '';
+  return { tw: twUnique, rest: restStr };
 }
