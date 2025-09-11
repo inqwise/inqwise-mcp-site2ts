@@ -181,7 +181,9 @@ fn handle_init(params: InitParams) -> Result<Value> {
             let _ = w.call("initRuntime", json!({}));
         }
     }
-    Ok(serde_json::to_value(json!({ "ok": true, "pinned": pinned }))?)
+    Ok(serde_json::to_value(
+        json!({ "ok": true, "pinned": pinned }),
+    )?)
 }
 
 fn handle_crawl(params: CrawlParams) -> Result<Value> {
@@ -550,6 +552,7 @@ fn respond(result: Option<Value>, error: Option<Value>, id: Option<Value>) {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .with_writer(std::io::stderr)
         .init();
     info!(target = "site2ts", "site2ts-server JSON-RPC starting");
 
