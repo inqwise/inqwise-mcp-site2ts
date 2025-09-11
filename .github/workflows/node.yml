@@ -30,9 +30,10 @@ jobs:
       - name: Schema validation
         run: |
           set -e
+          npm i -D ajv-formats@3 --silent
           for f in schemas/*.json; do
             echo "Compiling $f";
-            npx -y ajv-cli@5 compile --spec=draft2020 -r schemas/common.v1.json -s "$f";
+            npx -y ajv-cli@5 compile --spec=draft2020 -c ajv-formats -r schemas/common.v1.json -s "$f";
           done
-          npx -y ajv-cli@5 validate --spec=draft2020 -s schemas/crawl.request.v1.json -d schemas/examples/crawl.request.sample.json
-          npx -y ajv-cli@5 validate --spec=draft2020 -s schemas/diff.response.v1.json -d schemas/examples/diff.response.sample.json
+          npx -y ajv-cli@5 validate --spec=draft2020 -c ajv-formats -s schemas/crawl.request.v1.json -d schemas/examples/crawl.request.sample.json
+          npx -y ajv-cli@5 validate --spec=draft2020 -c ajv-formats -s schemas/diff.response.v1.json -d schemas/examples/diff.response.sample.json
