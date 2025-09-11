@@ -40,5 +40,5 @@ jobs:
               npx -y -p ajv-cli@5 -p ajv-formats@3 ajv compile --spec=draft2020 -c ajv-formats -r schemas/common.v1.json -s "$f";
             fi
           done
-          npx -y -p ajv-cli@5 -p ajv-formats@3 ajv validate --spec=draft2020 -c ajv-formats -s schemas/crawl.request.v1.json -d schemas/examples/crawl.request.sample.json
-          npx -y -p ajv-cli@5 -p ajv-formats@3 ajv validate --spec=draft2020 -c ajv-formats -s schemas/diff.response.v1.json -d schemas/examples/diff.response.sample.json
+          npx -y -p ajv-cli@5 -p ajv-formats@3 ajv validate --spec=draft2020 -c ajv-formats -r schemas/common.v1.json -s schemas/crawl.request.v1.json -d schemas/examples/crawl.request.sample.json
+          npx -y -p ajv-cli@5 -p ajv-formats@3 ajv validate --spec=draft2020 -c ajv-formats -r schemas/common.v1.json -s schemas/diff.response.v1.json -d schemas/examples/diff.response.sample.json
