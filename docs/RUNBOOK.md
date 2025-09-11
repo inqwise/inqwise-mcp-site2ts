@@ -49,3 +49,11 @@ Quick guide to convert a site to Next.js + TypeScript using the MCP server + Nod
 - Visual diffs will fall back to baseline-as-actual if the app fails to start.
 - Apply respects exclusions: `.git/`, `.env*`, `.site2ts/`, `node_modules/`.
 
+## Quick JSON-RPC via Node
+If you build the Rust server to `./target/debug/site2ts-server`, you can feed it JSON-RPC lines:
+
+```
+printf '{"jsonrpc":"2.0","method":"init","params":{"projectRoot":"."},"id":1}\n' | ./target/debug/site2ts-server
+```
+
+Then send subsequent lines for `crawl`, `analyze`, etc. One line per request.

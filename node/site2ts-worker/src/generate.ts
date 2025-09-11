@@ -205,6 +205,33 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
 
   for (const [k, v] of entries) {
     switch (k) {
+      case 'flex-direction':
+        if (v === 'row') tw.push('flex-row');
+        else if (v === 'row-reverse') tw.push('flex-row-reverse');
+        else if (v === 'column') tw.push('flex-col');
+        else if (v === 'column-reverse') tw.push('flex-col-reverse');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'flex-wrap':
+        if (v === 'nowrap') tw.push('flex-nowrap');
+        else if (v === 'wrap') tw.push('flex-wrap');
+        else if (v === 'wrap-reverse') tw.push('flex-wrap-reverse');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'align-self':
+        if (v === 'auto') tw.push('self-auto');
+        else if (v === 'start' || v === 'flex-start') tw.push('self-start');
+        else if (v === 'center') tw.push('self-center');
+        else if (v === 'end' || v === 'flex-end') tw.push('self-end');
+        else if (v === 'stretch') tw.push('self-stretch');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'order': {
+        const n = parseInt(v, 10);
+        if (!Number.isNaN(n)) tw.push(`order-${n}`);
+        else rest.push(`${k}: ${v}`);
+        break;
+      }
       case 'margin':
         mapSpacing('m', v);
         break;
@@ -284,6 +311,11 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
         else if (v === '300' || v === 'light') tw.push('font-light');
         else rest.push(`${k}: ${v}`);
         break;
+      case 'font-style':
+        if (v === 'italic') tw.push('italic');
+        else if (v === 'normal') tw.push('not-italic');
+        else rest.push(`${k}: ${v}`);
+        break;
       case 'gap':
         mapSpacing('gap', v);
         break;
@@ -316,6 +348,12 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
         if (v === '1px' || v.startsWith('1px ')) tw.push('border');
         else rest.push(`${k}: ${v}`);
         break;
+      case 'border-style':
+        if (v === 'solid') tw.push('border-solid');
+        else if (v === 'dashed') tw.push('border-dashed');
+        else if (v === 'dotted') tw.push('border-dotted');
+        else rest.push(`${k}: ${v}`);
+        break;
       case 'border-radius': {
         const m = v.match(/^(\d+)(px)?$/);
         if (m) {
@@ -334,6 +372,14 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
         break;
       case 'height':
         if (v === '100%' || v === 'auto') tw.push('h-full');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'min-width':
+        if (v === '100%') tw.push('min-w-full');
+        else rest.push(`${k}: ${v}`);
+        break;
+      case 'min-height':
+        if (v === '100%') tw.push('min-h-full');
         else rest.push(`${k}: ${v}`);
         break;
       case 'overflow':
@@ -381,6 +427,25 @@ function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
         else if (v === '1') tw.push('leading-none');
         else rest.push(`${k}: ${v}`);
         break;
+      case 'opacity': {
+        const n = parseFloat(v);
+        if (!Number.isNaN(n)) {
+          const pct = Math.round(n <= 1 ? n * 100 : n);
+          // clamp to Tailwind's typical steps
+          const step = [0,5,10,20,25,30,40,50,60,70,75,80,90,95,100].reduce((a,b)=>Math.abs(b-pct)<Math.abs(a-pct)?b:a,0);
+          tw.push(`opacity-${step}`);
+        } else rest.push(`${k}: ${v}`);
+        break;
+      }
+      case 'z-index': {
+        const n = parseInt(v, 10);
+        if (!Number.isNaN(n)) {
+          const allowed = [0,10,20,30,40,50];
+          const step = allowed.reduce((a,b)=>Math.abs(b-n)<Math.abs(a-n)?b:a,0);
+          tw.push(`z-${step}`);
+        } else rest.push(`${k}: ${v}`);
+        break;
+      }
       case 'background-repeat':
         if (v === 'no-repeat') tw.push('bg-no-repeat');
         else rest.push(`${k}: ${v}`);
