@@ -58,6 +58,16 @@ Notes:
 - The Rust server spawns the Node worker from `node/site2ts-worker/dist/index.js`, so the worker must be built first (`npm run build`). The script does this for convenience.
 - For interactive sessions (multiple requests in one process), you can run the server directly and feed it one JSON line per request via stdin.
 
+## Dependencies Policy
+- Rust crates: pinned to latest minor/patch series for stability (see `rust/site2ts-server/Cargo.toml`). We periodically bump to latest stable; breaking bumps are handled explicitly.
+- Node (worker):
+  - TypeScript toolchain uses caret ranges to pick up minor/patch updates automatically:
+    - `typescript` (>=5.5), `@typescript-eslint/*` (v8), `eslint` (v9), `prettier` (v3), `eslint-plugin-import`, `eslint-config-prettier`.
+  - Runtime deps (`playwright`, `playwright-core`, `pixelmatch`, `pngjs`, `get-port`, etc.) also use caret ranges for minor/patch updates.
+- Generated staging app:
+  - `next` pinned to a secure version (currently 14.2.32) to avoid known CVEs.
+  - Dev toolchain uses caret ranges for minor/patch updates (TypeScript, Tailwind, PostCSS stack).
+
 ## Roadmap / Next Improvements
 - Tailwind mapping: expand utilities (colors, shadows, line-height/letter-spacing mapping), reduce CSS fallback footprint.
 - Visual diff: harden Next.js start/screenshot timing; support multiple viewports (mobile).
