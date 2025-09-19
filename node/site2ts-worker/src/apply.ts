@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ulid } from 'ulid';
+import { emitProgress, pathExists, rpcError } from './utils.js';
 
 async function* walk(dir: string): AsyncGenerator<string> {
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
@@ -29,6 +30,14 @@ async function ensureDir(p: string) {
 export async function apply(_generationId: string, target: string, dryRun: boolean) {
   const jobId = ulid();
   const staging = path.join('.site2ts', 'staging');
+  if (!(await pathExists(staging))) {
+    throw rpcError(-32006, 'staging output missing; run scaffold/generate before apply');
+  }
+  if (!(await pathExists(path.join('.site2ts', 'reports', 'tailwind', 'fallbacks.json')))) {
+    throw rpcError(-32005, 'generation artifacts missing; run generate before apply');
+  }
+  emitProgress({ tool: 'apply', phase: 'start', extra: { jobId, generationId: _generationId, target, dryRun } });
+
   const changedFiles: string[] = [];
   const deletedFiles = { removed: [] as string[], skipped: [] as string[] };
 
@@ -102,6 +111,15 @@ export async function apply(_generationId: string, target: string, dryRun: boole
       await fs.copyFile(file, dest);
     }
     changedFiles.push(rel);
+    if (changedFiles.length % 25 === 0) {
+      emitProgress({
+        tool: 'apply',
+        phase: 'copy',
+        current: changedFiles.length,
+        detail: rel,
+        extra: { jobId },
+      });
+    }
   }
 
   if (dryRun) {
@@ -112,6 +130,12 @@ export async function apply(_generationId: string, target: string, dryRun: boole
       JSON.stringify({ changedFiles, deletedFiles }, null, 2),
     );
   }
+
+  emitProgress({
+    tool: 'apply',
+    phase: 'complete',
+    extra: { jobId, applied: !dryRun, changed: changedFiles.length, removed: deletedFiles.removed.length },
+  });
 
   return { jobId, applied: !dryRun, changedFiles, deletedFiles };
 }

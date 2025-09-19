@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Context, Result};
-use serde::{Deserialize, Serialize};
+use anyhow::{Context, Result};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
 use std::fs::OpenOptions;
@@ -10,6 +10,60 @@ use tracing_subscriber::EnvFilter;
 use ulid::Ulid;
 mod worker;
 use worker::Worker;
+
+type RpcResult<T> = std::result::Result<T, RpcError>;
+
+#[derive(Debug, Clone)]
+pub(crate) struct RpcError {
+    code: i32,
+    message: String,
+    data: Option<Value>,
+}
+
+impl RpcError {
+    fn new(code: i32, message: impl Into<String>, data: Option<Value>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            data,
+        }
+    }
+
+    fn invalid_params(message: impl Into<String>) -> Self {
+        Self::new(-32602, message.into(), None)
+    }
+
+    fn internal(message: impl Into<String>) -> Self {
+        Self::new(-32603, message.into(), None)
+    }
+
+    fn code(&self) -> i32 {
+        self.code
+    }
+
+    fn message(&self) -> &str {
+        &self.message
+    }
+
+    fn to_json(&self) -> Value {
+        let mut obj = json!({
+            "code": self.code,
+            "message": self.message,
+        });
+        if let Some(data) = &self.data {
+            obj["data"] = data.clone();
+        }
+        obj
+    }
+}
+
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for RpcError {}
 
 #[derive(Debug, Deserialize)]
 struct RpcRequest {
@@ -126,6 +180,10 @@ fn write_json_pretty(path: &Path, value: &Value) -> Result<()> {
     Ok(())
 }
 
+fn parse_params<T: DeserializeOwned>(params: &Value) -> std::result::Result<T, RpcError> {
+    serde_json::from_value(params.clone()).map_err(|e| RpcError::invalid_params(e.to_string()))
+}
+
 fn log_ndjson(job_id: &str, phase: &str, msg: &str, data: Value) -> Result<()> {
     let logs_dir = PathBuf::from(".site2ts").join("logs");
     ensure_dir(&logs_dir)?;
@@ -148,15 +206,19 @@ fn log_ndjson(job_id: &str, phase: &str, msg: &str, data: Value) -> Result<()> {
     Ok(())
 }
 
-fn handle_init(params: InitParams) -> Result<Value> {
+fn handle_init(params: InitParams) -> RpcResult<Value> {
     // Prepare sandbox directories
     let root = PathBuf::from(&params.project_root);
     let site2ts = root.join(".site2ts");
-    ensure_dir(&site2ts.join("staging"))?;
-    ensure_dir(&site2ts.join("cache").join("pw"))?;
-    ensure_dir(&site2ts.join("reports"))?;
-    ensure_dir(&site2ts.join("logs"))?;
-    ensure_dir(&site2ts.join("exports"))?;
+    for dir in [
+        site2ts.join("staging"),
+        site2ts.join("cache").join("pw"),
+        site2ts.join("reports"),
+        site2ts.join("logs"),
+        site2ts.join("exports"),
+    ] {
+        ensure_dir(&dir).map_err(|e| RpcError::internal(e.to_string()))?;
+    }
 
     // Write pins.json per spec (pinned versions; can be refined later)
     let pins = json!({
@@ -167,7 +229,8 @@ fn handle_init(params: InitParams) -> Result<Value> {
         "tailwind": "3.4.10",
         "createdAt": chrono::Utc::now().to_rfc3339(),
     });
-    write_json_pretty(&site2ts.join("pins.json"), &pins)?;
+    write_json_pretty(&site2ts.join("pins.json"), &pins)
+        .map_err(|e| RpcError::internal(e.to_string()))?;
 
     let pinned = Pinned {
         node: "20.x".to_string(),
@@ -178,18 +241,21 @@ fn handle_init(params: InitParams) -> Result<Value> {
     // Ask worker to ensure runtime deps (Chromium) are available
     if let Ok(mutex) = Worker::get() {
         if let Ok(mut w) = mutex.lock() {
-            let _ = w.call("initRuntime", json!({}));
+            if let Err(err) = w.call("initRuntime", json!({})) {
+                return Err(err);
+            }
         }
     }
-    Ok(serde_json::to_value(
-        json!({ "ok": true, "pinned": pinned }),
-    )?)
+    serde_json::to_value(json!({ "ok": true, "pinned": pinned }))
+        .map_err(|e| RpcError::internal(e.to_string()))
 }
 
-fn handle_crawl(params: CrawlParams) -> Result<Value> {
+fn handle_crawl(params: CrawlParams) -> RpcResult<Value> {
     // Call Node worker crawl for IDs, then persist sitemap manifest according to spec.
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call(
         "crawl",
         json!({
@@ -219,7 +285,7 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
     let pages = res.get("pages").cloned().unwrap_or_else(|| json!([]));
 
     let sitemap_dir = PathBuf::from(".site2ts").join("cache").join("sitemaps");
-    ensure_dir(&sitemap_dir)?;
+    ensure_dir(&sitemap_dir).map_err(|e| RpcError::internal(e.to_string()))?;
     let sitemap = json!({
         "siteMapId": site_map_id,
         "startUrl": params.start_url,
@@ -233,13 +299,14 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
         "pages": pages
     });
     let path = sitemap_dir.join(format!("{}.json", site_map_id));
-    write_json_pretty(&path, &sitemap)?;
+    write_json_pretty(&path, &sitemap).map_err(|e| RpcError::internal(e.to_string()))?;
     log_ndjson(
         &job_id,
         "crawl",
         "Crawl stub completed",
         json!({ "pages": sitemap["pages"].as_array().map(|a| a.len()).unwrap_or(0) }),
-    )?;
+    )
+    .map_err(|e| RpcError::internal(e.to_string()))?;
 
     Ok(json!({
         "jobId": job_id,
@@ -248,11 +315,14 @@ fn handle_crawl(params: CrawlParams) -> Result<Value> {
     }))
 }
 
-fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
+fn handle_analyze(params: AnalyzeParams) -> RpcResult<Value> {
     // Delegate to worker and persist analysis.json
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
-    let res = w.call("analyze", json!({ "siteMapId": params.site_map_id }))?;
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
+    let res = w
+        .call("analyze", json!({ "siteMapId": params.site_map_id }))?;
 
     let job_id = res
         .get("jobId")
@@ -272,8 +342,9 @@ fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
         "assets": res.get("assets").cloned().unwrap_or(json!({"images":[],"fonts":[],"styles":[]})),
     });
     let out = PathBuf::from(".site2ts").join("staging").join("meta");
-    ensure_dir(&out)?;
-    write_json_pretty(&out.join("analysis.json"), &analysis)?;
+    ensure_dir(&out).map_err(|e| RpcError::internal(e.to_string()))?;
+    write_json_pretty(&out.join("analysis.json"), &analysis)
+        .map_err(|e| RpcError::internal(e.to_string()))?;
 
     log_ndjson(
         &job_id,
@@ -282,7 +353,8 @@ fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
         json!({
             "routes": analysis["routes"].as_array().map(|a| a.len()).unwrap_or(0)
         }),
-    )?;
+    )
+    .map_err(|e| RpcError::internal(e.to_string()))?;
 
     Ok(json!({
         "jobId": job_id,
@@ -292,9 +364,11 @@ fn handle_analyze(params: AnalyzeParams) -> Result<Value> {
     }))
 }
 
-fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+fn handle_scaffold(params: ScaffoldParams) -> RpcResult<Value> {
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call(
         "scaffold",
         json!({
@@ -324,7 +398,8 @@ fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
         "scaffold",
         "Scaffold prepared",
         json!({ "outDir": out_dir }),
-    )?;
+    )
+    .map_err(|e| RpcError::internal(e.to_string()))?;
 
     Ok(json!({
         "jobId": job_id,
@@ -333,9 +408,11 @@ fn handle_scaffold(params: ScaffoldParams) -> Result<Value> {
     }))
 }
 
-fn handle_generate(params: GenerateParams) -> Result<Value> {
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+fn handle_generate(params: GenerateParams) -> RpcResult<Value> {
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call(
         "generate",
         json!({
@@ -361,7 +438,8 @@ fn handle_generate(params: GenerateParams) -> Result<Value> {
         "generate",
         "Generate complete",
         json!({ "generationId": generation_id }),
-    )?;
+    )
+    .map_err(|e| RpcError::internal(e.to_string()))?;
 
     Ok(json!({
         "jobId": job_id,
@@ -415,9 +493,11 @@ struct PackParams {
     generation_id: String,
 }
 
-fn handle_diff(params: DiffParams) -> Result<Value> {
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+fn handle_diff(params: DiffParams) -> RpcResult<Value> {
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call(
         "diff",
         json!({
@@ -444,13 +524,16 @@ fn handle_diff(params: DiffParams) -> Result<Value> {
         "diff",
         "Visual diff complete",
         json!({ "diffId": diff_id }),
-    )?;
+    )
+    .map_err(|e| RpcError::internal(e.to_string()))?;
     Ok(res)
 }
 
-fn handle_audit(params: AuditParams) -> Result<Value> {
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+fn handle_audit(params: AuditParams) -> RpcResult<Value> {
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call(
         "audit",
         json!({
@@ -475,13 +558,16 @@ fn handle_audit(params: AuditParams) -> Result<Value> {
         "audit",
         "Audit completed",
         json!({ "auditId": audit_id }),
-    )?;
+    )
+    .map_err(|e| RpcError::internal(e.to_string()))?;
     Ok(res)
 }
 
-fn handle_apply(params: ApplyParams) -> Result<Value> {
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+fn handle_apply(params: ApplyParams) -> RpcResult<Value> {
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call(
         "apply",
         json!({
@@ -495,37 +581,44 @@ fn handle_apply(params: ApplyParams) -> Result<Value> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| Ulid::new().to_string());
-    log_ndjson(&job_id, "apply", "Apply executed", json!({}))?;
+    log_ndjson(&job_id, "apply", "Apply executed", json!({}))
+        .map_err(|e| RpcError::internal(e.to_string()))?;
     Ok(res)
 }
 
-fn handle_assets(params: AssetsParams) -> Result<Value> {
+fn handle_assets(params: AssetsParams) -> RpcResult<Value> {
     let id = params
         .site_map_id
         .or(params.generation_id)
         .unwrap_or_else(|| Ulid::new().to_string());
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call("assets", json!({ "generationId": id }))?;
     let job_id = res
         .get("jobId")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| Ulid::new().to_string());
-    log_ndjson(&job_id, "assets", "Assets manifest generated", json!({}))?;
+    log_ndjson(&job_id, "assets", "Assets manifest generated", json!({}))
+        .map_err(|e| RpcError::internal(e.to_string()))?;
     Ok(res)
 }
 
-fn handle_pack(params: PackParams) -> Result<Value> {
-    let worker_mutex = Worker::get()?;
-    let mut w = worker_mutex.lock().unwrap();
+fn handle_pack(params: PackParams) -> RpcResult<Value> {
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
     let res = w.call("pack", json!({ "generationId": params.generation_id }))?;
     let job_id = res
         .get("jobId")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| Ulid::new().to_string());
-    log_ndjson(&job_id, "pack", "Pack completed", json!({}))?;
+    log_ndjson(&job_id, "pack", "Pack completed", json!({}))
+        .map_err(|e| RpcError::internal(e.to_string()))?;
     Ok(res)
 }
 
@@ -580,49 +673,143 @@ async fn main() -> Result<()> {
             }
         };
         let id = req.id.clone();
-        let res = match req.method.as_str() {
-            "init" => serde_json::from_value::<InitParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_init),
-            "crawl" => serde_json::from_value::<CrawlParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_crawl),
-            "analyze" => serde_json::from_value::<AnalyzeParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_analyze),
-            "scaffold" => serde_json::from_value::<ScaffoldParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_scaffold),
-            "generate" => serde_json::from_value::<GenerateParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_generate),
-            "diff" => serde_json::from_value::<DiffParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_diff),
-            "audit" => serde_json::from_value::<AuditParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_audit),
-            "apply" => serde_json::from_value::<ApplyParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_apply),
-            "assets" => serde_json::from_value::<AssetsParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_assets),
-            "pack" => serde_json::from_value::<PackParams>(req.params.clone())
-                .map_err(|e| anyhow!(e.to_string()))
-                .and_then(handle_pack),
-            _ => Err(anyhow!("method not found")),
+        let res: Result<Value> = match req.method.as_str() {
+            "init" => match parse_params::<InitParams>(&req.params) {
+                Ok(params) => handle_init(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "crawl" => match parse_params::<CrawlParams>(&req.params) {
+                Ok(params) => handle_crawl(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "analyze" => match parse_params::<AnalyzeParams>(&req.params) {
+                Ok(params) => handle_analyze(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "scaffold" => match parse_params::<ScaffoldParams>(&req.params) {
+                Ok(params) => handle_scaffold(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "generate" => match parse_params::<GenerateParams>(&req.params) {
+                Ok(params) => handle_generate(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "diff" => match parse_params::<DiffParams>(&req.params) {
+                Ok(params) => handle_diff(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "audit" => match parse_params::<AuditParams>(&req.params) {
+                Ok(params) => handle_audit(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "apply" => match parse_params::<ApplyParams>(&req.params) {
+                Ok(params) => handle_apply(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "assets" => match parse_params::<AssetsParams>(&req.params) {
+                Ok(params) => handle_assets(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "pack" => match parse_params::<PackParams>(&req.params) {
+                Ok(params) => handle_pack(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            _ => Err(RpcError::new(-32601, "method not found", None).into()),
         };
         match res {
-            Ok(v) => respond(Some(v), None, id),
-            Err(e) => respond(
-                None,
-                Some(json!({"code": -32601, "message": e.to_string()})),
-                id,
-            ),
+            Ok(v) => respond(Some(v), None, id.clone()),
+            Err(e) => {
+                if let Some(rpc_err) = e.downcast_ref::<RpcError>() {
+                    respond(None, Some(rpc_err.to_json()), id.clone());
+                } else {
+                    respond(
+                        None,
+                        Some(json!({
+                            "code": -32603,
+                            "message": format!("internal error: {}", e)
+                        })),
+                        id.clone(),
+                    );
+                }
+            }
         }
         io::stdout().flush().ok();
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use once_cell::sync::Lazy;
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, Once};
+
+    static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+    static INIT_CWD: Once = Once::new();
+
+    fn guard() -> std::sync::MutexGuard<'static, ()> {
+        let lock = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        INIT_CWD.call_once(|| {
+            let manifest = env!("CARGO_MANIFEST_DIR");
+            let repo_root = PathBuf::from(manifest).join("../..");
+            std::env::set_current_dir(&repo_root).expect("chdir repo root");
+        });
+        lock
+    }
+
+    fn cleanup_site2ts() {
+        let _ = fs::remove_dir_all(".site2ts");
+    }
+
+    #[test]
+    fn missing_param_returns_invalid_params_error() {
+        let _guard = guard();
+        let err = parse_params::<InitParams>(&json!({})).unwrap_err();
+        assert_eq!(err.code(), -32602);
+        assert!(err.message().contains("projectRoot") || err.message().contains("missing field"));
+    }
+
+    #[test]
+    fn analyze_before_crawl_returns_order_error() {
+        let _guard = guard();
+        cleanup_site2ts();
+        let err = handle_analyze(AnalyzeParams {
+            site_map_id: "missing".into(),
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), -32001);
+        assert!(err.message().contains("crawl"));
+    }
+
+    #[test]
+    fn generate_before_scaffold_returns_order_error() {
+        let _guard = guard();
+        cleanup_site2ts();
+        let err = handle_generate(GenerateParams {
+            analysis_id: "analysis".into(),
+            scaffold_id: "scaffold".into(),
+            tailwind_mode: String::new(),
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), -32003);
+        assert!(err.message().contains("scaffold"));
+    }
+
+    #[test]
+    fn apply_before_generate_returns_order_error() {
+        let _guard = guard();
+        cleanup_site2ts();
+        let err = handle_apply(ApplyParams {
+            generation_id: "gen".into(),
+            target: None,
+            dry_run: None,
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), -32006);
+        assert!(err.message().contains("generate"));
+    }
 }

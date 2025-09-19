@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as cheerio from 'cheerio';
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulid';
+import { emitProgress, pathExists, rpcError } from './utils.js';
 
 type SiteMap = {
   siteMapId: string;
@@ -25,8 +26,19 @@ export async function analyze(siteMapId: string): Promise<AnalyzeResult> {
   const jobId = ulid();
   const analysisId = ulid();
   const sitemapPath = path.join('.site2ts', 'cache', 'sitemaps', `${siteMapId}.json`);
-  const raw = await fs.readFile(sitemapPath, 'utf-8');
+  if (!(await pathExists(sitemapPath))) {
+    throw rpcError(-32001, `siteMapId ${siteMapId} not found; run crawl first`);
+  }
+  let raw: string;
+  try {
+    raw = await fs.readFile(sitemapPath, 'utf-8');
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw rpcError(-32603, `failed to read sitemap: ${msg}`);
+  }
   const sm = JSON.parse(raw) as SiteMap;
+
+  emitProgress({ tool: 'analyze', phase: 'start', extra: { jobId, siteMapId } });
 
   const routes: AnalyzeResult['routes'] = [];
   const forms: AnalyzeResult['forms'] = [];
@@ -72,6 +84,14 @@ export async function analyze(siteMapId: string): Promise<AnalyzeResult> {
       // skip unreadable pages
     }
   }
+
+  emitProgress({
+    tool: 'analyze',
+    phase: 'complete',
+    current: routes.length,
+    total: sm.pages?.length || 0,
+    extra: { jobId, analysisId },
+  });
 
   return {
     jobId,

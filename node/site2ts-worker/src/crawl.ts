@@ -5,6 +5,7 @@ import path from 'node:path';
 import { Minimatch } from 'minimatch';
 import { XMLParser } from 'fast-xml-parser';
 import { ulid } from 'ulid';
+import { emitProgress } from './utils.js';
 
 export type CrawlParams = {
   startUrl: string;
@@ -161,6 +162,8 @@ export async function crawl(params: CrawlParams): Promise<{ jobId: string; siteM
   const baseDir = path.join('.site2ts', 'cache', 'crawl');
   await ensureDir(baseDir);
 
+  emitProgress({ tool: 'crawl', phase: 'start', detail: params.startUrl, extra: { jobId } });
+
   const allowMatchers = buildMatchers(params.allow || []);
   const denyMatchers = buildMatchers(params.deny || []);
 
@@ -204,6 +207,14 @@ export async function crawl(params: CrawlParams): Promise<{ jobId: string; siteM
     try {
       const entry = await savePageArtifacts(baseDir, url.toString());
       pages.push(entry);
+      emitProgress({
+        tool: 'crawl',
+        phase: 'page',
+        current: pages.length,
+        total: params.maxPages,
+        detail: url.toString(),
+        extra: { jobId },
+      });
     } catch {
       // ignore fetch failures for MVP
     }
@@ -225,6 +236,14 @@ export async function crawl(params: CrawlParams): Promise<{ jobId: string; siteM
 
     if (params.delayMs > 0) await new Promise((r) => setTimeout(r, params.delayMs));
   }
+
+  emitProgress({
+    tool: 'crawl',
+    phase: 'complete',
+    current: pages.length,
+    total: pages.length,
+    extra: { jobId, siteMapId },
+  });
 
   return { jobId, siteMapId, pages };
 }

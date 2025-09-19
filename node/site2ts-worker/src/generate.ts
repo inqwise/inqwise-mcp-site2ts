@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulid';
+import { emitProgress, pathExists, rpcError } from './utils.js';
 
 type Analysis = {
   routes: { route: string; sourceUrl: string; dynamic: boolean; params?: string[] }[];
@@ -42,14 +43,16 @@ async function writePageTsx(
   bodyHtml: string,
   opts?: { withFallbackCss?: boolean },
 ) {
+  // Instead of embedding raw TSX for complex third-party markup, inject as HTML string
   const tsx = htmlToTsx(bodyHtml);
+  const safe = tsx.replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
   const dir = path.join(appDir, routeToDir(route));
   await ensureDir(dir);
   const file = path.join(dir, 'page.tsx');
   const banner = `// TODO: tailwindify — fallback styling may be present\n`;
   const imports = opts?.withFallbackCss ? `import styles from './page.module.css'\n` : '';
   const mainClass = opts?.withFallbackCss ? ` className={styles.fallback}` : '';
-  const contents = `${banner}${imports}export default function Page() {\n  return (\n    <main${mainClass}>\n      {/* Auto-generated content (MVP). Some inline styles may remain; see reports/tailwind/fallbacks.json */}\n      <>${tsx}</>\n    </main>\n  );\n}\n`;
+  const contents = `${banner}${imports}export default function Page() {\n  return (\n    <main${mainClass}>\n      {/* Auto-generated content (MVP). Some inline styles may remain; see reports/tailwind/fallbacks.json */}\n      <div dangerouslySetInnerHTML={{ __html: \`${safe}\` }} />\n    </main>\n  );\n}\n`;
   await fs.writeFile(file, contents, 'utf-8');
 }
 
@@ -80,16 +83,31 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   const stagingDir = path.join('.site2ts', 'staging');
   const appDir = path.join(stagingDir, 'app');
   const analysisPath = path.join(stagingDir, 'meta', 'analysis.json');
-  // analysisId is recorded but we read from analysis.json in staging for MVP
-  const raw = await fs.readFile(analysisPath, 'utf-8');
+  if (!(await pathExists(path.join(stagingDir, 'package.json')))) {
+    throw rpcError(-32003, 'scaffold output missing; run scaffold before generate');
+  }
+  if (!(await pathExists(analysisPath))) {
+    throw rpcError(-32002, 'analysis.json missing; run analyze before generate');
+  }
+  let raw: string;
+  try {
+    raw = await fs.readFile(analysisPath, 'utf-8');
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw rpcError(-32603, `failed to read analysis: ${msg}`);
+  }
   const analysis: Analysis = JSON.parse(raw);
 
   // Copy images to app/(site2ts)/assets
   const assetsDir = path.join(appDir, '(site2ts)', 'assets');
   const imageMap = await copyImages(assetsDir, analysis.assets?.images || []);
 
+  emitProgress({ tool: 'generate', phase: 'start', extra: { jobId, generationId }, total: analysis.routes.length });
+
   // For each route, read cached page HTML by sourceUrl
   const fallbackReport: Array<{ route: string; unmappedInlineStyles: number }> = [];
+  const inlineCssChunks = new Set<string>();
+  const stylesheetUrls = new Set<string>();
   for (const r of analysis.routes) {
     const hash = sha1(r.sourceUrl);
     const htmlPath = path.join('.site2ts', 'cache', 'crawl', hash, 'page.html');
@@ -103,6 +121,20 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
         const abs = new URL(src, r.sourceUrl).toString();
         const mapped = imageMap[abs];
         if (mapped) $(el).attr('src', `/${mapped}`);
+      });
+      $('link[rel="stylesheet"][href], link[rel="preload"][as="style"][href]').each((_: number, el: any) => {
+        const href = $(el).attr('href');
+        if (!href) return;
+        try {
+          const abs = new URL(href, r.sourceUrl).toString();
+          stylesheetUrls.add(abs);
+        } catch {
+          /* ignore */
+        }
+      });
+      $('style').each((_: number, el: any) => {
+        const css = $(el).html();
+        if (css?.trim()) inlineCssChunks.add(css.trim());
       });
       // Remove script tags (will add TODO separately if needed)
       $('script').remove();
@@ -126,7 +158,9 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
           $(el).removeAttr('style');
         }
       });
-      const bodyHtml = $('body').html() || '';
+      let bodyHtml = $('body').html() || '';
+      // Convert HTML comments to JSX comments
+      bodyHtml = bodyHtml.replace(/<!--/g, '{/*').replace(/-->/g, '*/}');
       await writePageTsx(appDir, r.route, bodyHtml, { withFallbackCss: unmappedCount > 0 });
       // Emit CSS module with TODOs when there are unmapped styles
       if (unmappedCount > 0) {
@@ -144,6 +178,14 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
         await fs.writeFile(cssPath, `${header}\n${comments}\n`);
       }
       fallbackReport.push({ route: r.route, unmappedInlineStyles: unmappedCount });
+      emitProgress({
+        tool: 'generate',
+        phase: 'route',
+        detail: r.route,
+        current: fallbackReport.length,
+        total: analysis.routes.length,
+        extra: { jobId, generationId, unmappedInlineStyles: unmappedCount },
+      });
     } catch {
       // skip missing page.html
     }
@@ -156,6 +198,30 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
     fallbacksPath,
     JSON.stringify({ routes: fallbackReport }, null, 2),
   );
+
+  // Capture external styles so the app renders without runtime scripts
+  const externalCss: string[] = [];
+  for (const css of inlineCssChunks) {
+    externalCss.push(css);
+  }
+  for (const url of stylesheetUrls) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (text.trim()) externalCss.push(text.trim());
+    } catch {
+      // ignore download failures
+    }
+  }
+  if (externalCss.length) {
+    const globalsPath = path.join(appDir, 'globals.css');
+    const existing = await fs.readFile(globalsPath, 'utf-8');
+    const merged = `${existing}\n/* External styles captured from source site */\n${externalCss.join('\n\n')}\n`;
+    await fs.writeFile(globalsPath, merged, 'utf-8');
+  }
+
+  emitProgress({ tool: 'generate', phase: 'complete', extra: { jobId, generationId } });
 
   return { jobId, generationId };
 }

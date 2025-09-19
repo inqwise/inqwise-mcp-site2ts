@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ulid } from 'ulid';
+import { emitProgress } from './utils.js';
 
 export type ScaffoldParams = { analysisId: string; appRouter?: boolean };
 
@@ -21,6 +22,8 @@ export async function scaffold(_params: ScaffoldParams): Promise<{ jobId: string
 
   await ensureDir(outDir);
 
+  emitProgress({ tool: 'scaffold', phase: 'start', extra: { jobId } });
+
   // package.json (versions are indicative; exact pins are handled by pins.json)
   await writeFile(
     path.join(outDir, 'package.json'),
@@ -36,17 +39,18 @@ export async function scaffold(_params: ScaffoldParams): Promise<{ jobId: string
           lint: 'next lint'
         },
         dependencies: {
-          next: '14.2.5',
+          next: '14.2.32',
           react: '18.3.1',
           'react-dom': '18.3.1'
         },
         devDependencies: {
-          typescript: '5.5.4',
-          '@types/react': '18.3.3',
-          '@types/node': '20.14.10',
-          tailwindcss: '3.4.10',
-          autoprefixer: '10.4.20',
-          postcss: '8.4.41'
+          typescript: '^5.5.4',
+          '@types/react': '^18.3.3',
+          '@types/react-dom': '^18.3.0',
+          '@types/node': '^20.14.10',
+          tailwindcss: '^3.4.10',
+          autoprefixer: '^10.4.20',
+          postcss: '^8.4.41'
         }
       },
       null,
@@ -54,11 +58,14 @@ export async function scaffold(_params: ScaffoldParams): Promise<{ jobId: string
     )
   );
 
-  // next.config.ts
+  // next.config.mjs (Next doesn't support TypeScript config)
   await writeFile(
-    path.join(outDir, 'next.config.ts'),
-    `import type { NextConfig } from 'next';
-const nextConfig: NextConfig = { reactStrictMode: true };
+    path.join(outDir, 'next.config.mjs'),
+    `/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  images: { unoptimized: true },
+};
 export default nextConfig;
 `
   );
@@ -124,6 +131,8 @@ export default {
 
   // Placeholder assets folder for generated assets later
   await ensureDir(path.join(appDir, '(site2ts)', 'assets'));
+
+  emitProgress({ tool: 'scaffold', phase: 'complete', extra: { jobId, scaffoldId } });
 
   return { jobId, scaffoldId, outDir };
 }

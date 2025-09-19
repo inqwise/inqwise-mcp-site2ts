@@ -1,14 +1,14 @@
 import readline from 'node:readline';
-import { crawl, CrawlParams } from './crawl';
-import { analyze } from './analyze';
-import { scaffold } from './scaffold';
-import { generate } from './generate';
-import { diff as doDiff } from './diff';
-import { audit as doAudit } from './audit';
-import { apply as doApply } from './apply';
-import { assets as doAssets } from './assets';
-import { pack as doPack } from './pack';
-import { initRuntime } from './init';
+import { crawl, CrawlParams } from './crawl.js';
+import { analyze } from './analyze.js';
+import { scaffold } from './scaffold.js';
+import { generate } from './generate.js';
+import { diff as doDiff } from './diff.js';
+import { audit as doAudit } from './audit.js';
+import { apply as doApply } from './apply.js';
+import { assets as doAssets } from './assets.js';
+import { pack as doPack } from './pack.js';
+import { initRuntime } from './init.js';
 
 type Json = any;
 

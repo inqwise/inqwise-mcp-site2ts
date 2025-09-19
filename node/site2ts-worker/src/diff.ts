@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { ulid } from 'ulid';
 import { chromium } from 'playwright-core';
 import getPort from 'get-port';
-import { run, ensureDir } from './utils';
+import { run, ensureDir, pathExists, rpcError, ensureDeps, emitProgress } from './utils.js';
 import { spawn } from 'node:child_process';
 
 type Analysis = {
@@ -43,25 +43,89 @@ export async function diff(
 ) {
   const jobId = ulid();
   const diffId = ulid();
+  const stagingDir = path.join('.site2ts', 'staging');
 
   // Load analysis for route list
   const analysisPath = path.join('.site2ts', 'staging', 'meta', 'analysis.json');
-  const raw = await fs.readFile(analysisPath, 'utf-8');
+  if (!(await pathExists(analysisPath))) {
+    throw rpcError(-32004, 'analysis.json missing; run analyze before diff');
+  }
+  const fallbacks = path.join('.site2ts', 'reports', 'tailwind', 'fallbacks.json');
+  if (!(await pathExists(fallbacks))) {
+    throw rpcError(-32005, 'generation artifacts missing; run generate before diff');
+  }
+  let raw: string;
+  emitProgress({ tool: 'diff', phase: 'start', extra: { jobId, generationId }, detail: 'initializing' });
+  emitProgress({ tool: 'diff', phase: 'deps', extra: { jobId, generationId }, detail: stagingDir });
+  await ensureDeps(stagingDir);
+
+  try {
+    raw = await fs.readFile(analysisPath, 'utf-8');
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw rpcError(-32603, `failed to read analysis: ${msg}`);
+  }
   const analysis: Analysis = JSON.parse(raw);
 
   const outRoot = path.join('.site2ts', 'reports', 'diff', diffId);
   const perRoute: { route: string; diffRatio: number; artifacts: { baseline: string; actual: string; diff: string } }[] = [];
 
   // Attempt to start Next.js app from staging for actual screenshots
-  const stagingDir = path.join('.site2ts', 'staging');
-  const port = await getPort({ port: 3100 });
-  let serverProc: { kill: () => void } | null = null;
+  // Be resilient in restricted environments: default port and catch discovery errors
+  let port = 3100;
   try {
-    await run('npm', ['run', 'build'], stagingDir); // may no-op if not installed; audit ensures deps earlier
-    serverProc = spawnServer(stagingDir, port);
-    await waitForHttp(`http://localhost:${port}/`, 20000);
+    port = await getPort({ port: 3100 });
   } catch {
+    // keep default port
+  }
+  let serverProc: { kill: () => void } | null = null;
+  emitProgress({ tool: 'diff', phase: 'build', extra: { jobId, generationId }, detail: `port ${port}` });
+  try {
+    emitProgress({ tool: 'diff', phase: 'build', detail: 'npm run build', extra: { jobId, generationId } });
+    const buildRes = await run('npm', ['run', 'build'], stagingDir, { timeoutMs: 300_000 });
+    if (buildRes.timedOut) {
+      throw rpcError(
+        -32008,
+        'visual diff timed out running "npm run build" in staging',
+        { step: 'npm run build', timeoutMs: 300_000 },
+      );
+    }
+    if (buildRes.code !== 0) {
+      throw rpcError(
+        -32008,
+        'visual diff failed running "npm run build" in staging',
+        { step: 'npm run build', exitCode: buildRes.code, stdout: buildRes.stdout, stderr: buildRes.stderr },
+      );
+    }
+    emitProgress({
+      tool: 'diff',
+      phase: 'build-complete',
+      extra: { jobId, generationId, stdout: buildRes.stdout.length, stderr: buildRes.stderr.length },
+    });
+    serverProc = spawnServer(stagingDir, port);
+    emitProgress({
+      tool: 'diff',
+      phase: 'serve',
+      detail: `http://localhost:${port}/`,
+      extra: { jobId, generationId },
+    });
+    await waitForHttp(`http://localhost:${port}/`, 30_000);
+    emitProgress({
+      tool: 'diff',
+      phase: 'serve-ready',
+      detail: `http://localhost:${port}/`,
+      extra: { jobId, generationId },
+    });
+  } catch (err) {
+    if (serverProc) serverProc.kill();
     serverProc = null;
+    emitProgress({
+      tool: 'diff',
+      phase: 'error',
+      detail: err instanceof Error ? err.message : String(err),
+      extra: { jobId, generationId },
+    });
+    throw err;
   }
 
   for (const r of analysis.routes) {
@@ -70,9 +134,23 @@ export async function diff(
     const baselinePath = path.join('.site2ts', 'cache', 'crawl', baseHash, 'snap.png');
 
     // Actual: if server started, render route; otherwise fallback to baseline
-    const actualPath = serverProc
-      ? await renderActual(`http://localhost:${port}${r.route}`, viewport, outRoot, r.route)
-      : baselinePath;
+    let actualPath = baselinePath;
+    if (serverProc) {
+      try {
+        emitProgress({
+          tool: 'diff',
+          phase: 'route',
+          detail: r.route,
+          current: perRoute.length,
+          total: analysis.routes.length,
+          extra: { jobId, generationId },
+        });
+        actualPath = await renderActual(`http://localhost:${port}${r.route}`, viewport, outRoot, r.route);
+      } catch {
+        // Fallback to baseline if rendering fails (e.g., Playwright unavailable)
+        actualPath = baselinePath;
+      }
+    }
 
     try {
       const baselinePng = await readPng(baselinePath);
@@ -125,6 +203,12 @@ export async function diff(
     }
   }
 
+  if (serverProc) {
+    emitProgress({ tool: 'diff', phase: 'serve-stop', extra: { jobId, generationId } });
+    serverProc.kill();
+    serverProc = null;
+  }
+
   const avg = perRoute.length
     ? perRoute.reduce((acc, p) => acc + p.diffRatio, 0) / perRoute.length
     : 0;
@@ -162,4 +246,9 @@ async function waitForHttp(url: string, timeoutMs: number) {
     } catch {}
     await new Promise((r) => setTimeout(r, 500));
   }
+  throw rpcError(
+    -32008,
+    `visual diff timed out waiting for staging server at ${url}`,
+    { url, timeoutMs },
+  );
 }
