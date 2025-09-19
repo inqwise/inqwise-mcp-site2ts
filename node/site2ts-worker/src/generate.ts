@@ -102,6 +102,10 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   const assetsDir = path.join(appDir, '(site2ts)', 'assets');
   const imageMap = await copyImages(assetsDir, analysis.assets?.images || []);
 
+  let capturedBodyClass: string | null = null;
+  let capturedHtmlLang: string | null = null;
+  let capturedHtmlDir: string | null = null;
+
   emitProgress({ tool: 'generate', phase: 'start', extra: { jobId, generationId }, total: analysis.routes.length });
 
   // For each route, read cached page HTML by sourceUrl
@@ -121,6 +125,32 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
         const abs = new URL(src, r.sourceUrl).toString();
         const mapped = imageMap[abs];
         if (mapped) $(el).attr('src', `/${mapped}`);
+      });
+      if (capturedBodyClass === null) {
+        capturedBodyClass = collapseWhitespace($('body').attr('class') || '');
+        capturedHtmlLang = $('html').attr('lang') || null;
+        capturedHtmlDir = $('html').attr('dir') || null;
+      }
+      // Unhide elements that Wix keeps hidden until JS warms up
+      $('.hidden-during-prewarmup').each((_: number, el: any) => {
+        const cls = $(el).attr('class');
+        if (cls) {
+          const nextCls = cls
+            .split(/\s+/)
+            .filter((token: string) => token && token !== 'hidden-during-prewarmup')
+            .join(' ');
+          $(el).attr('class', nextCls);
+        }
+        const style = $(el).attr('style');
+        if (style) {
+          const filtered = style
+            .split(';')
+            .map((s) => s.trim())
+            .filter((s) => s && !/^visibility\s*:/i.test(s) && !/^opacity\s*:/i.test(s))
+            .join('; ');
+          if (filtered) $(el).attr('style', filtered);
+          else $(el).removeAttr('style');
+        }
       });
       $('link[rel="stylesheet"][href], link[rel="preload"][as="style"][href]').each((_: number, el: any) => {
         const href = $(el).attr('href');
@@ -202,14 +232,14 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   // Capture external styles so the app renders without runtime scripts
   const externalCss: string[] = [];
   for (const css of inlineCssChunks) {
-    externalCss.push(css);
+    externalCss.push(normalizeExternalCss(css));
   }
   for (const url of stylesheetUrls) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
       const text = await res.text();
-      if (text.trim()) externalCss.push(text.trim());
+      if (text.trim()) externalCss.push(normalizeExternalCss(text.trim()));
     } catch {
       // ignore download failures
     }
@@ -221,9 +251,41 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
     await fs.writeFile(globalsPath, merged, 'utf-8');
   }
 
+  await writeLayout(appDir, {
+    bodyClass: capturedBodyClass,
+    htmlLang: capturedHtmlLang,
+    htmlDir: capturedHtmlDir,
+  });
+
   emitProgress({ tool: 'generate', phase: 'complete', extra: { jobId, generationId } });
 
   return { jobId, generationId };
+}
+
+function collapseWhitespace(input: string): string {
+  return input.split(/\s+/).filter(Boolean).join(' ');
+}
+
+async function writeLayout(
+  appDir: string,
+  opts: { bodyClass: string | null; htmlLang: string | null; htmlDir: string | null },
+) {
+  const layoutPath = path.join(appDir, 'layout.tsx');
+  const lang = opts.htmlLang || 'en';
+  const dirAttr = opts.htmlDir ? ` dir=${JSON.stringify(opts.htmlDir)}` : '';
+  const bodyClass = opts.bodyClass && opts.bodyClass.length > 0
+    ? collapseWhitespace(opts.bodyClass)
+    : 'min-h-screen bg-white text-gray-900';
+  const layout = `import './globals.css'\n\nexport default function RootLayout({ children }: { children: React.ReactNode }) {\n  return (\n    <html lang=${JSON.stringify(lang)}${dirAttr}>\n      <body className=${JSON.stringify(bodyClass)}>\n        {children}\n      </body>\n    </html>\n  );\n}\n`;
+  await fs.writeFile(layoutPath, layout, 'utf-8');
+}
+
+function normalizeExternalCss(css: string): string {
+  return css
+    .replace(/}(?=[^\s])/g, '}\n')
+    .replace(/;\);/g, ';)')
+    .replace(/--([a-z0-9_-]+)\s+-/gi, (m, g1) => `--${g1}-`)
+    .replace(/--([a-z0-9_-]+)-\s+/gi, (m, g1) => `--${g1}-`);
 }
 
 function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
