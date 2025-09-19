@@ -321,8 +321,7 @@ fn handle_analyze(params: AnalyzeParams) -> RpcResult<Value> {
     let mut w = worker_mutex
         .lock()
         .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
-    let res = w
-        .call("analyze", json!({ "siteMapId": params.site_map_id }))?;
+    let res = w.call("analyze", json!({ "siteMapId": params.site_map_id }))?;
 
     let job_id = res
         .get("jobId")
