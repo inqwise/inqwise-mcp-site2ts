@@ -20,6 +20,7 @@ pub(crate) struct RpcError {
     data: Option<Value>,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl RpcError {
     fn new(code: i32, message: impl Into<String>, data: Option<Value>) -> Self {
         Self {
@@ -241,9 +242,7 @@ fn handle_init(params: InitParams) -> RpcResult<Value> {
     // Ask worker to ensure runtime deps (Chromium) are available
     if let Ok(mutex) = Worker::get() {
         if let Ok(mut w) = mutex.lock() {
-            if let Err(err) = w.call("initRuntime", json!({})) {
-                return Err(err);
-            }
+            w.call("initRuntime", json!({}))?;
         }
     }
     serde_json::to_value(json!({ "ok": true, "pinned": pinned }))
