@@ -19,6 +19,8 @@ function isExcluded(rel: string): boolean {
     rel.startsWith('.git/') ||
     rel.startsWith('.site2ts/') ||
     rel.startsWith('node_modules/') ||
+    rel.startsWith('.next/') ||
+    rel.startsWith('out/') ||
     rel.startsWith('.env')
   );
 }
