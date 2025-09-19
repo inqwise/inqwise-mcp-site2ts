@@ -41,6 +41,9 @@ If creating the repo via GitHub UI, choose: Owner `inqwise`, repo name `inqwise-
 ## Status
 MVP spec authored; implementation tasks planned. See `PROGRESS.md`.
 
+Recent updates:
+- Generator preserves the original Wix markup, rewrites same-origin links to relative URLs, and converts `wow-image` backgrounds into inline CSS for better visual parity.
+
 ## License
 Apache-2.0 — see `LICENSE` for details.
 

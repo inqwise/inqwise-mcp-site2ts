@@ -27,4 +27,4 @@ This file tracks high-level tasks and status. One active task at a time.
 ## Notes
 - Commits are created only at important milestones or upon task completion.
 - NDJSON logs and IDs (ULIDs) must align with the spec.
-
+- 2025-09-19: Generator now keeps original markup, rewrites same-origin links to relative paths, and inlines Wix background assets (wow-image) for higher visual fidelity.

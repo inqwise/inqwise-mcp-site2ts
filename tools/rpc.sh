@@ -14,21 +14,26 @@ fi
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 
-echo "[rpc] Building Node worker…" >&2
-pushd "$ROOT_DIR/node/site2ts-worker" >/dev/null
-if [[ -f package-lock.json ]]; then npm ci 1>&2; else npm install 1>&2; fi
-npm run -s build 1>&2
-popd >/dev/null
+# Verify worker build artifacts exist instead of rebuilding every run.
+WORKER_DIR="$ROOT_DIR/node/site2ts-worker"
+WORKER_ENTRY="$WORKER_DIR/dist/index.js"
+if [[ ! -f "$WORKER_ENTRY" ]]; then
+  echo "Worker build artifact missing: $WORKER_ENTRY" >&2
+  echo "Run 'npm install' (if needed) and 'npm run build' inside $WORKER_DIR" >&2
+  exit 1
+fi
 
-echo "[rpc] Building Rust server…" >&2
-pushd "$ROOT_DIR/rust/site2ts-server" >/dev/null
-cargo build -q
-popd >/dev/null
-
+# Verify Rust server binary exists instead of rebuilding every run.
 BIN="$ROOT_DIR/rust/site2ts-server/target/debug/site2ts-server"
 if [[ ! -x "$BIN" ]]; then
   # Fallback for non-cargo default target dir
   BIN="$ROOT_DIR/rust/site2ts-server/target/debug/site2ts-server.exe"
+fi
+
+if [[ ! -x "$BIN" ]]; then
+  echo "Rust server binary missing: $BIN" >&2
+  echo "Run 'cargo build --manifest-path rust/site2ts-server/Cargo.toml'" >&2
+  exit 1
 fi
 
 echo "$REQ_JSON" | "$BIN"

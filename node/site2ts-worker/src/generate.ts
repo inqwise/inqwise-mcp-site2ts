@@ -24,17 +24,8 @@ function routeToDir(route: string): string {
   return route.replace(/^\//, '');
 }
 
-function htmlToTsx(html: string): string {
-  // Very basic transform: class -> className, strip on* handlers, keep style as-is for now (fallback)
-  let out = html
-    .replace(/\sclass=/g, ' className=')
-    .replace(/\son[a-zA-Z]+="[^"]*"/g, '') // remove inline handlers
-    .replace(/\son[a-zA-Z]+=\{[^}]*\}/g, '');
-  // Self-close common void elements if not already
-  out = out.replace(/<img([^>]*)>(?!\s*<\/img>)/g, '<img$1 />');
-  out = out.replace(/<br([^>]*)>(?!\s*<\/br>)/g, '<br$1 />');
-  out = out.replace(/<hr([^>]*)>(?!\s*<\/hr>)/g, '<hr$1 />');
-  return out;
+function escapeForTemplateLiteral(html: string): string {
+  return html.replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 }
 
 async function writePageTsx(
@@ -44,8 +35,7 @@ async function writePageTsx(
   opts?: { withFallbackCss?: boolean },
 ) {
   // Instead of embedding raw TSX for complex third-party markup, inject as HTML string
-  const tsx = htmlToTsx(bodyHtml);
-  const safe = tsx.replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+  const safe = escapeForTemplateLiteral(bodyHtml);
   const dir = path.join(appDir, routeToDir(route));
   await ensureDir(dir);
   const file = path.join(dir, 'page.tsx');
@@ -127,6 +117,22 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
         const mapped = imageMap[abs];
         if (mapped) $(el).attr('src', `/${mapped}`);
       });
+      convertWowImages($);
+      const sourceOrigin = new URL(r.sourceUrl).origin;
+      $('a[href]').each((_: number, el: any) => {
+        const href = $(el).attr('href');
+        if (!href) return;
+        const trimmed = href.trim();
+        if (!trimmed || trimmed.startsWith('#') || /^mailto:/i.test(trimmed) || /^tel:/i.test(trimmed)) return;
+        try {
+          const parsed = new URL(trimmed, r.sourceUrl);
+          if (parsed.origin !== sourceOrigin) return;
+          const relative = `${parsed.pathname || '/'}` + `${parsed.search || ''}` + `${parsed.hash || ''}`;
+          $(el).attr('href', relative || '/');
+        } catch {
+          /* ignore invalid URLs */
+        }
+      });
       if (capturedBodyClass === null) {
         capturedBodyClass = collapseWhitespace($('body').attr('class') || '');
         capturedHtmlLang = $('html').attr('lang') || null;
@@ -173,29 +179,63 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
       });
       // Remove script tags (will add TODO separately if needed)
       $('script').remove();
+      // Track inline styles; keep them verbatim for fidelity, just catalog for reporting.
       // Map inline styles to Tailwind utilities where feasible
       let unmappedCount = 0;
       const restStyles: string[] = [];
       $('[style]').each((_: number, el: any) => {
-        const style = ($(el).attr('style') || '').trim();
-        if (!style) return;
-        const { tw, rest } = mapInlineStyleToTw(style);
+        const originalStyle = ($(el).attr('style') || '').trim();
+        if (!originalStyle) return;
+        const { tw, rest } = mapInlineStyleToTw(originalStyle);
         if (tw.length) {
           const existing = ($(el).attr('class') || '').trim();
-          const merged = (existing ? existing + ' ' : '') + tw.join(' ');
-          $(el).attr('class', merged);
+          const mergedSet = new Set(existing ? existing.split(/\s+/).filter(Boolean) : []);
+          for (const cls of tw) mergedSet.add(cls);
+          $(el).attr('class', Array.from(mergedSet).join(' '));
         }
+
+        const fallbackFragments: string[] = [];
+        const synthesizedFragments: string[] = [];
         if (rest) {
-          $(el).attr('style', rest);
-          unmappedCount += 1;
-          restStyles.push(rest);
+          for (const fragment of rest.split(';')) {
+            const trimmed = fragment.trim();
+            if (!trimmed) continue;
+            const idx = trimmed.indexOf(':');
+            if (idx === -1) {
+              fallbackFragments.push(trimmed);
+              continue;
+            }
+            const key = trimmed.slice(0, idx).trim();
+            const value = trimmed.slice(idx + 1).trim();
+            const conversions = convertCustomProperty(key, value, cssVariables);
+            if (conversions.length) synthesizedFragments.push(...conversions);
+            else fallbackFragments.push(trimmed);
+          }
+        }
+
+        const combinedFragments = [...synthesizedFragments, ...fallbackFragments];
+        if (combinedFragments.length) {
+          $(el).attr('style', combinedFragments.join('; '));
         } else {
           $(el).removeAttr('style');
         }
+
+        if (fallbackFragments.length) {
+          unmappedCount += fallbackFragments.length;
+          restStyles.push(...fallbackFragments);
+        }
       });
-      let bodyHtml = $('body').html() || '';
-      // Convert HTML comments to JSX comments
-      bodyHtml = bodyHtml.replace(/<!--/g, '{/*').replace(/-->/g, '*/}');
+      // Strip inline event handlers (e.g., onclick) before serialization for safety.
+      $('*').each((_: number, el: any) => {
+        const attribs = el.attribs || {};
+        for (const attr of Object.keys(attribs)) {
+          if (/^on[a-z]+/i.test(attr)) {
+            $(el).removeAttr(attr);
+          }
+        }
+      });
+
+      const bodyHtml = $('body').html() || '';
       await writePageTsx(appDir, r.route, bodyHtml, { withFallbackCss: unmappedCount > 0 });
       // Emit CSS module with TODOs when there are unmapped styles
       if (unmappedCount > 0) {
@@ -271,8 +311,92 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   return { jobId, generationId };
 }
 
+function convertWowImages($: cheerio.CheerioAPI) {
+  const alignMap: Record<string, string> = {
+    center: '50% 50%',
+    left: '0% 50%',
+    right: '100% 50%',
+    top: '50% 0%',
+    bottom: '50% 100%',
+    top_left: '0% 0%',
+    top_right: '100% 0%',
+    bottom_left: '0% 100%',
+    bottom_right: '100% 100%',
+  };
+
+  $('wow-image').each((_: number, node: any) => {
+    const el = $(node);
+    const parent = el.parent();
+    if (!parent.length) {
+      el.remove();
+      return;
+    }
+
+    const img = el.find('img').first();
+    let src = img.attr('src') || '';
+
+    const infoRaw = el.attr('data-image-info');
+    let alignType: string | undefined;
+    let displayMode: string | undefined;
+    if (infoRaw) {
+      try {
+        const parsed = JSON.parse(infoRaw);
+        alignType = parsed?.alignType || parsed?.alignment;
+        displayMode = parsed?.displayMode || parsed?.imageData?.displayMode;
+        const uri = parsed?.imageData?.uri;
+        if (!src && uri) {
+          src = `https://static.wixstatic.com/media/${uri}`;
+        }
+      } catch {
+        /* ignore parse failures */
+      }
+    }
+
+    if (!src) {
+      el.replaceWith(el.html() || '');
+      return;
+    }
+
+    const additions: Record<string, string> = {
+      'background-image': `url('${src}')`,
+      'background-repeat': 'no-repeat',
+    };
+    additions['background-size'] = displayMode === 'fit' ? 'contain' : 'cover';
+    additions['background-position'] = alignType && alignMap[alignType] ? alignMap[alignType] : '50% 50%';
+
+    const merged = mergeStyleString(parent.attr('style'), additions);
+    parent.attr('style', merged);
+    el.remove();
+  });
+}
+
 function collapseWhitespace(input: string): string {
   return input.split(/\s+/).filter(Boolean).join(' ');
+}
+
+function mergeStyleString(existing: string | undefined, additions: Record<string, string>): string {
+  const map = new Map<string, string>();
+  if (existing) {
+    for (const part of existing.split(';')) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const idx = trimmed.indexOf(':');
+      if (idx === -1) continue;
+      const key = trimmed.slice(0, idx).trim().toLowerCase();
+      const value = trimmed.slice(idx + 1).trim();
+      if (key) map.set(key, value);
+    }
+  }
+  for (const [key, value] of Object.entries(additions)) {
+    const k = key.trim().toLowerCase();
+    const v = value.trim();
+    if (!k || !v) continue;
+    map.set(k, v);
+  }
+  const serialized = Array.from(map.entries())
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('; ');
+  return serialized ? `${serialized};` : '';
 }
 
 async function writeLayout(
@@ -295,6 +419,10 @@ function normalizeExternalCss(css: string, vars: Map<string, string>): string {
     .replace(/;\);/g, ';)')
     .replace(/--([a-z0-9_-]+)\s+-/gi, (m, g1) => `--${g1}-`)
     .replace(/--([a-z0-9_-]+)-\s+/gi, (m, g1) => `--${g1}-`)
+    .replace(/(--[a-z0-9_-]+\s*:\s*)([^;]+);/gi, (m, prefix, value) => {
+      const normalized = sanitizeCustomPropertyValue(value);
+      return `${prefix}${normalized};`;
+    })
     .replace(/rgba\(\s*var\(--([a-z0-9_-]+)\)\s*,\s*([^)]+)\)/gi, (m, name, alpha) => {
       const resolved = resolveCssVar(name, vars);
       if (!resolved) return m;
@@ -313,8 +441,7 @@ function normalizeExternalCss(css: string, vars: Map<string, string>): string {
       const [r, g, b, a] = components;
       if (typeof a === 'number') return `rgba(${r}, ${g}, ${b}, ${a})`;
       return `rgb(${r}, ${g}, ${b})`;
-    })
-    .replace(/var\(--([a-z0-9_-]+)\)/gi, (m, name) => resolveCssVar(name, vars) ?? m);
+    });
 }
 
 function collectCssVariables(css: string, vars: Map<string, string>) {
@@ -339,21 +466,122 @@ function resolveCssVar(name: string, vars: Map<string, string>): string | null {
 }
 
 function extractColorComponents(value: string): [number, number, number, number?] | null {
-  const rgbMatch = value.match(/^rgba?\(([^)]+)\)$/i);
+  const normalized = value.trim();
+  const important = normalized.endsWith('!important');
+  const cleaned = important ? normalized.slice(0, -10).trim() : normalized;
+
+  const rgbMatch = cleaned.match(/^rgba?\(([^)]+)\)$/i);
   if (rgbMatch) {
     const parts = rgbMatch[1].split(',').map((p) => parseFloat(p.trim()));
     if (parts.length >= 3 && parts.every((n) => !Number.isNaN(n))) {
-      return parts.length === 4 ? [parts[0], parts[1], parts[2], parts[3]] : [parts[0], parts[1], parts[2]];
+      if (parts.length === 4) {
+        return [parts[0], parts[1], parts[2], parts[3]];
+      }
+      const base: [number, number, number] = [parts[0], parts[1], parts[2]];
+      if (important) return [base[0], base[1], base[2], 1];
+      return base;
     }
   }
-  const numericParts = value.split(',').map((p) => p.trim());
+
+  const numericParts = cleaned.split(',').map((p) => p.trim());
   if (numericParts.length === 3 || numericParts.length === 4) {
     const numbers = numericParts.map((p) => parseFloat(p));
     if (numbers.every((n) => !Number.isNaN(n))) {
-      return numbers.length === 4 ? [numbers[0], numbers[1], numbers[2], numbers[3]] : [numbers[0], numbers[1], numbers[2]];
+      return numericParts.length === 4
+        ? [numbers[0], numbers[1], numbers[2], numbers[3]]
+        : [numbers[0], numbers[1], numbers[2]];
     }
   }
+
+  if (/^#[0-9a-f]{3,8}$/i.test(cleaned)) {
+    const hex = cleaned.replace('#', '');
+    if (hex.length === 6 || hex.length === 3) {
+      const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.slice(0, 2), 16);
+      const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.slice(2, 4), 16);
+      const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.slice(4, 6), 16);
+      return [r, g, b];
+    }
+  }
+
   return null;
+}
+
+function resolveColorExpression(value: string, vars: Map<string, string>): string | null {
+  let v = value.trim();
+  let suffix = '';
+  if (v.endsWith('!important')) {
+    suffix = ' !important';
+    v = v.slice(0, -10).trim();
+  }
+  if (v.startsWith('var(')) {
+    const match = v.match(/^var\(--([a-z0-9_-]+)\)$/i);
+    if (match) {
+      const resolved = resolveCssVar(match[1], vars);
+      if (!resolved) return null;
+      const nested = resolveColorExpression(resolved, vars);
+      return nested ? nested + suffix : null;
+    }
+  }
+  const components = extractColorComponents(v);
+  if (components) {
+    const [r, g, b, a] = components;
+    const color = typeof a === 'number' ? `rgba(${r}, ${g}, ${b}, ${a})` : `rgb(${r}, ${g}, ${b})`;
+    return color + suffix;
+  }
+  if (/^#[0-9a-f]{3,8}$/i.test(v)) return v + suffix;
+  return null;
+}
+
+function convertCustomProperty(key: string, value: string, vars: Map<string, string>): string[] {
+  const result: string[] = [];
+  const lowered = key.toLowerCase();
+  const colorTargets: Record<string, string[]> = {
+    '--bg': ['background-color'],
+    '--bgp': ['background-color'],
+    '--bgh': ['background-color'],
+    '--bg-overlay-color': ['background-color'],
+    '--bgh-overlay-color': ['background-color'],
+    '--txt': ['color'],
+    '--txtp': ['color'],
+    '--txth': ['color'],
+    '--brd': ['border-color'],
+    '--brdh': ['border-color'],
+  };
+
+  if (colorTargets[lowered]) {
+    const resolved = resolveColorExpression(value, vars);
+    if (resolved) {
+      for (const property of colorTargets[lowered]) {
+        result.push(`${property}: ${resolved}`);
+      }
+    }
+    return result;
+  }
+
+  if (lowered === '--shd' || lowered === '--boxshadowtoggleon-shd') {
+    const cleaned = value.replace(/!important/g, '').trim();
+    if (cleaned) result.push(`box-shadow: ${cleaned}`);
+    return result;
+  }
+
+  if (lowered === '--rd') {
+    const cleaned = value.replace(/!important/g, '').trim();
+    if (cleaned) result.push(`border-radius: ${cleaned}`);
+    return result;
+  }
+
+  return result;
+}
+
+function sanitizeCustomPropertyValue(value: string): string {
+  let v = value.trim();
+  const important = v.endsWith('!important');
+  if (important) {
+    v = v.slice(0, -10).trim();
+  }
+  // Leave complex values untouched (they may include shorthand or var() expressions).
+  v = v.replace(/\s+/g, ' ');
+  return important ? `${v} !important` : v;
 }
 
 function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
