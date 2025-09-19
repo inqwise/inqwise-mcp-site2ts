@@ -112,6 +112,7 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   const fallbackReport: Array<{ route: string; unmappedInlineStyles: number }> = [];
   const inlineCssChunks = new Set<string>();
   const stylesheetUrls = new Set<string>();
+  const cssVariables = new Map<string, string>();
   for (const r of analysis.routes) {
     const hash = sha1(r.sourceUrl);
     const htmlPath = path.join('.site2ts', 'cache', 'crawl', hash, 'page.html');
@@ -164,7 +165,11 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
       });
       $('style').each((_: number, el: any) => {
         const css = $(el).html();
-        if (css?.trim()) inlineCssChunks.add(css.trim());
+        if (css?.trim()) {
+          const chunk = css.trim();
+          collectCssVariables(chunk, cssVariables);
+          inlineCssChunks.add(chunk);
+        }
       });
       // Remove script tags (will add TODO separately if needed)
       $('script').remove();
@@ -232,14 +237,18 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   // Capture external styles so the app renders without runtime scripts
   const externalCss: string[] = [];
   for (const css of inlineCssChunks) {
-    externalCss.push(normalizeExternalCss(css));
+    externalCss.push(normalizeExternalCss(css, cssVariables));
   }
   for (const url of stylesheetUrls) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
       const text = await res.text();
-      if (text.trim()) externalCss.push(normalizeExternalCss(text.trim()));
+      if (text.trim()) {
+        const chunk = text.trim();
+        collectCssVariables(chunk, cssVariables);
+        externalCss.push(normalizeExternalCss(chunk, cssVariables));
+      }
     } catch {
       // ignore download failures
     }
@@ -280,12 +289,71 @@ async function writeLayout(
   await fs.writeFile(layoutPath, layout, 'utf-8');
 }
 
-function normalizeExternalCss(css: string): string {
+function normalizeExternalCss(css: string, vars: Map<string, string>): string {
   return css
     .replace(/}(?=[^\s])/g, '}\n')
     .replace(/;\);/g, ';)')
     .replace(/--([a-z0-9_-]+)\s+-/gi, (m, g1) => `--${g1}-`)
-    .replace(/--([a-z0-9_-]+)-\s+/gi, (m, g1) => `--${g1}-`);
+    .replace(/--([a-z0-9_-]+)-\s+/gi, (m, g1) => `--${g1}-`)
+    .replace(/rgba\(\s*var\(--([a-z0-9_-]+)\)\s*,\s*([^)]+)\)/gi, (m, name, alpha) => {
+      const resolved = resolveCssVar(name, vars);
+      if (!resolved) return m;
+      const components = extractColorComponents(resolved);
+      if (!components) return m;
+      const [r, g, b, a] = components;
+      const finalAlpha = typeof a === 'number' ? a : parseFloat(alpha.trim());
+      if (Number.isNaN(finalAlpha)) return m;
+      return `rgba(${r}, ${g}, ${b}, ${finalAlpha})`;
+    })
+    .replace(/rgb\(\s*var\(--([a-z0-9_-]+)\)\s*\)/gi, (m, name) => {
+      const resolved = resolveCssVar(name, vars);
+      if (!resolved) return m;
+      const components = extractColorComponents(resolved);
+      if (!components) return resolved;
+      const [r, g, b, a] = components;
+      if (typeof a === 'number') return `rgba(${r}, ${g}, ${b}, ${a})`;
+      return `rgb(${r}, ${g}, ${b})`;
+    })
+    .replace(/var\(--([a-z0-9_-]+)\)/gi, (m, name) => resolveCssVar(name, vars) ?? m);
+}
+
+function collectCssVariables(css: string, vars: Map<string, string>) {
+  const re = /--([a-z0-9_-]+)\s*:\s*([^;]+);/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(css))) {
+    vars.set(match[1], match[2].trim());
+  }
+}
+
+function resolveCssVar(name: string, vars: Map<string, string>): string | null {
+  const raw = vars.get(name);
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const components = extractColorComponents(trimmed);
+  if (components) {
+    const [r, g, b, a] = components;
+    if (typeof a === 'number') return `rgba(${r}, ${g}, ${b}, ${a})`;
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+  return trimmed;
+}
+
+function extractColorComponents(value: string): [number, number, number, number?] | null {
+  const rgbMatch = value.match(/^rgba?\(([^)]+)\)$/i);
+  if (rgbMatch) {
+    const parts = rgbMatch[1].split(',').map((p) => parseFloat(p.trim()));
+    if (parts.length >= 3 && parts.every((n) => !Number.isNaN(n))) {
+      return parts.length === 4 ? [parts[0], parts[1], parts[2], parts[3]] : [parts[0], parts[1], parts[2]];
+    }
+  }
+  const numericParts = value.split(',').map((p) => p.trim());
+  if (numericParts.length === 3 || numericParts.length === 4) {
+    const numbers = numericParts.map((p) => parseFloat(p));
+    if (numbers.every((n) => !Number.isNaN(n))) {
+      return numbers.length === 4 ? [numbers[0], numbers[1], numbers[2], numbers[3]] : [numbers[0], numbers[1], numbers[2]];
+    }
+  }
+  return null;
 }
 
 function mapInlineStyleToTw(style: string): { tw: string[]; rest: string } {
