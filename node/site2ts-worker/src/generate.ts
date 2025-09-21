@@ -11,6 +11,24 @@ type Analysis = {
   assets?: { images?: string[]; fonts?: string[]; styles?: string[] };
 };
 
+type HeaderContent = {
+  title?: string | null;
+  navItems: Array<{ label: string; href: string }>;
+};
+
+type HeroContent = {
+  heading?: string | null;
+  description?: string | null;
+  tagline?: string | null;
+  image?: { src: string; alt?: string | null } | null;
+};
+
+type CtaContent = {
+  heading?: string | null;
+  body?: string | null;
+  button?: { label: string; href: string } | null;
+};
+
 function sha1(s: string) {
   return createHash('sha1').update(s).digest('hex');
 }
@@ -32,7 +50,12 @@ async function writePageTsx(
   appDir: string,
   route: string,
   bodyHtml: string,
-  opts?: { withFallbackCss?: boolean },
+  opts?: {
+    withFallbackCss?: boolean;
+    header?: HeaderContent | null;
+    hero?: HeroContent | null;
+    cta?: CtaContent | null;
+  },
 ) {
   // Instead of embedding raw TSX for complex third-party markup, inject as HTML string
   const safe = escapeForTemplateLiteral(bodyHtml);
@@ -40,9 +63,27 @@ async function writePageTsx(
   await ensureDir(dir);
   const file = path.join(dir, 'page.tsx');
   const banner = `// TODO: tailwindify — fallback styling may be present\n`;
-  const imports = opts?.withFallbackCss ? `import styles from './page.module.css'\n` : '';
-  const mainClass = opts?.withFallbackCss ? ` className={styles.fallback}` : '';
-  const contents = `${banner}${imports}export default function Page() {\n  return (\n    <main${mainClass}>\n      {/* Auto-generated content (MVP). Some inline styles may remain; see reports/tailwind/fallbacks.json */}\n      <div dangerouslySetInnerHTML={{ __html: \`${safe}\` }} />\n    </main>\n  );\n}\n`;
+  const importLines = new Set<string>();
+  if (opts?.withFallbackCss) importLines.add(`import styles from './page.module.css'`);
+  const needsLink =
+    Boolean(opts?.cta?.button && opts.cta.button.href.startsWith('/')) ||
+    Boolean(opts?.header?.navItems?.some((item) => item.href.startsWith('/')));
+  if (needsLink) importLines.add(`import Link from 'next/link'`);
+  const imports = importLines.size ? `${Array.from(importLines).join('\n')}\n\n` : '';
+
+  const mainClass = 'className="flex min-h-screen flex-col bg-white text-slate-900"';
+  const fallbackAttributes = [] as string[];
+  if (opts?.withFallbackCss) fallbackAttributes.push('className={styles.fallback}');
+  fallbackAttributes.push('data-site2ts="legacy"');
+  const fallbackAttr = fallbackAttributes.length ? ` ${fallbackAttributes.join(' ')}` : '';
+  const fallbackBlock = `      <section${fallbackAttr} dangerouslySetInnerHTML={{ __html: \`${safe}\` }} />`;
+
+  const headerBlock = opts?.header ? '      <SiteHeader />\n' : '';
+  const heroBlock = opts?.hero ? '      <HeroSection />\n' : '';
+  const ctaBlock = opts?.cta ? '      <CallToAction />\n' : '';
+  const helperBlock = buildHelperBlocks(opts?.header, opts?.hero, opts?.cta);
+
+  const contents = `${banner}${imports}export default function Page() {\n  return (\n    <main ${mainClass}>\n${headerBlock}${heroBlock}${ctaBlock}      {/* Auto-generated legacy content (MVP). Remaining sections pending Tailwind conversion. */}\n${fallbackBlock}\n    </main>\n  );\n}\n\n${helperBlock}`;
   await fs.writeFile(file, contents, 'utf-8');
 }
 
@@ -99,7 +140,7 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
   emitProgress({ tool: 'generate', phase: 'start', extra: { jobId, generationId }, total: analysis.routes.length });
 
   // For each route, read cached page HTML by sourceUrl
-  const fallbackReport: Array<{ route: string; unmappedInlineStyles: number }> = [];
+const fallbackReport: Array<{ route: string; unmappedInlineStyles: number }> = [];
   const inlineCssChunks = new Set<string>();
   const stylesheetUrls = new Set<string>();
   const cssVariables = new Map<string, string>();
@@ -109,6 +150,9 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
     try {
       const html = await fs.readFile(htmlPath, 'utf-8');
       const $ = cheerio.load(html);
+      let headerContent: HeaderContent | null = null;
+      let heroContent: HeroContent | null = null;
+      let ctaContent: CtaContent | null = null;
       // Update img src to local mapping when available
       $('img[src]').each((_: number, el: any) => {
         const src = $(el).attr('src');
@@ -177,6 +221,21 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
           inlineCssChunks.add(chunk);
         }
       });
+      if (r.route === '/') {
+        headerContent = extractHeader($, r.sourceUrl);
+        if (headerContent) {
+          $('#SITE_HEADER').remove();
+        }
+        heroContent = extractHomeHero($, imageMap, r.sourceUrl);
+        if (heroContent) {
+          $('#comp-m1f0f5dr').remove();
+        }
+        ctaContent = extractHomeCta($, r.sourceUrl);
+        if (ctaContent) {
+          $('#comp-lt8phyu3').remove();
+          $('#comp-j7ghlthx').remove();
+        }
+      }
       // Remove script tags (will add TODO separately if needed)
       $('script').remove();
       // Track inline styles; keep them verbatim for fidelity, just catalog for reporting.
@@ -236,7 +295,12 @@ export async function generate(_analysisId: string, _scaffoldId: string, _tailwi
       });
 
       const bodyHtml = $('body').html() || '';
-      await writePageTsx(appDir, r.route, bodyHtml, { withFallbackCss: unmappedCount > 0 });
+      await writePageTsx(appDir, r.route, bodyHtml, {
+        withFallbackCss: unmappedCount > 0,
+        header: headerContent,
+        hero: heroContent,
+        cta: ctaContent,
+      });
       // Emit CSS module with TODOs when there are unmapped styles
       if (unmappedCount > 0) {
         const dir = path.join(appDir, routeToDir(r.route));
@@ -370,8 +434,156 @@ function convertWowImages($: cheerio.CheerioAPI) {
   });
 }
 
-function collapseWhitespace(input: string): string {
-  return input.split(/\s+/).filter(Boolean).join(' ');
+function collapseWhitespace(input: string | null | undefined): string {
+  if (!input) return '';
+  return input.replace(/\u200b/g, ' ').split(/\s+/).filter(Boolean).join(' ');
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toRelativeUrl(raw: string | null | undefined, sourceUrl: string): string | null {
+  if (!raw) return null;
+  try {
+    const abs = new URL(raw, sourceUrl);
+    const origin = new URL(sourceUrl).origin;
+    if (abs.origin === origin) {
+      return `${abs.pathname}${abs.search}${abs.hash}` || '/';
+    }
+    return abs.toString();
+  } catch {
+    return raw;
+  }
+}
+
+function mapAssetUrl(
+  raw: string | null | undefined,
+  sourceUrl: string,
+  imageMap: Record<string, string>,
+): string | null {
+  if (!raw) return null;
+  try {
+    const abs = new URL(raw, sourceUrl).toString();
+    return imageMap[abs] ? `/${imageMap[abs]}` : abs;
+  } catch {
+    return raw;
+  }
+}
+
+function extractHomeHero(
+  $: cheerio.CheerioAPI,
+  imageMap: Record<string, string>,
+  sourceUrl: string,
+): HeroContent | null {
+  const heading = collapseWhitespace($('#comp-m1f0f5f11').text());
+  const description = collapseWhitespace($('#comp-m1f0f5f16').text());
+  const tagline = collapseWhitespace($('#comp-m1f0f5ey').text());
+  const heroImageNode = $('#comp-j6gmckgo wow-image img').first();
+  const image = mapAssetUrl(heroImageNode.attr('src') || null, sourceUrl, imageMap);
+
+  if (!heading && !description && !tagline && !image) return null;
+
+  return {
+    heading: heading || null,
+    description: description || null,
+    tagline: tagline || null,
+    image: image ? { src: image, alt: heroImageNode.attr('alt') || 'Hero background' } : null,
+  };
+}
+
+function extractHomeCta($: cheerio.CheerioAPI, sourceUrl: string): CtaContent | null {
+  const container = $('#comp-j7ghlthx');
+  if (!container.length) return null;
+  const heading = collapseWhitespace(container.find('h2').first().text());
+  const body = collapseWhitespace(container.find('p').first().text());
+  const buttonNode = container.find('a[href]').first();
+  const href = toRelativeUrl(buttonNode.attr('href') || null, sourceUrl);
+  const label = collapseWhitespace(buttonNode.text()) || buttonNode.attr('aria-label') || 'Contact Us';
+
+  if (!heading && !body && !href) return null;
+
+  return {
+    heading: heading || null,
+    body: body || null,
+    button: href ? { label, href } : null,
+  };
+}
+
+function extractHeader($: cheerio.CheerioAPI, sourceUrl: string): HeaderContent | null {
+  const navItems: Array<{ label: string; href: string }> = [];
+  $('#SITE_HEADER a[data-testid="linkElement"]').each((_, el) => {
+    const hrefRaw = $(el).attr('href') || '';
+    const label = collapseWhitespace($(el).text());
+    const href = toRelativeUrl(hrefRaw, sourceUrl);
+    if (!href || !label) return;
+    navItems.push({ label, href });
+  });
+
+  if (!navItems.length) return null;
+
+  const titleText = collapseWhitespace($('#SITE_HEADER').find('p').first().text()) || 'Inqwise';
+  return {
+    title: titleText,
+    navItems,
+  };
+}
+
+function buildHelperBlocks(
+  header?: HeaderContent | null,
+  hero?: HeroContent | null,
+  cta?: CtaContent | null,
+): string {
+  const helpers: string[] = [];
+
+  if (header) {
+    const headerLiteral = JSON.stringify(
+      {
+        title: header.title ?? null,
+        navItems: header.navItems,
+      },
+      null,
+      2,
+    );
+    helpers.push(`const HEADER_CONTENT = ${headerLiteral} as const;`);
+    helpers.push(`function SiteHeader() {\n  const brand = HEADER_CONTENT.title || 'Inqwise';\n  const links = HEADER_CONTENT.navItems;\n  return (\n    <header className=\"border-b border-slate-200 bg-white/95 backdrop-blur\">\n      <div className=\"mx-auto flex max-w-5xl items-center justify-between px-6 py-4\">\n        <Link href=\"/\" className=\"text-lg font-semibold tracking-tight text-slate-900\">{brand}</Link>\n        <nav className=\"flex flex-wrap items-center gap-6 text-sm text-slate-700\">\n          {links.map((item: { label: string; href: string }) => (\n            <Link key={item.href} href={item.href} className=\"transition hover:text-sky-500\">\n              {item.label}\n            </Link>\n          ))}\n        </nav>\n      </div>\n    </header>\n  );\n}`);
+  }
+
+  if (hero) {
+    const heroLiteral = JSON.stringify(
+      {
+        heading: hero.heading ?? null,
+        description: hero.description ?? null,
+        tagline: hero.tagline ?? null,
+        image: hero.image ?? null,
+      },
+      null,
+      2,
+    );
+    helpers.push(`const HERO_CONTENT = ${heroLiteral} as const;`);
+    helpers.push(`function HeroSection() {\n  const image = HERO_CONTENT.image as { src: string; alt?: string | null } | null;\n  return (\n    <section className=\"relative overflow-hidden bg-slate-950 text-white\">\n      <div className=\"absolute inset-0\">\n        {image ? (\n          <img\n            src={image.src}\n            alt={image.alt ?? 'Hero background'}\n            className=\"h-full w-full object-cover object-center opacity-70\"\n            loading=\"lazy\"\n          />\n        ) : (\n          <div className=\"absolute inset-0 bg-slate-900\" />\n        )}\n        <div className=\"absolute inset-0 bg-gradient-to-br from-slate-950/90 via-slate-950/80 to-slate-900/70\" />\n      </div>\n      <div className=\"relative mx-auto flex max-w-5xl flex-col gap-6 px-6 py-20 md:py-28\">\n        {HERO_CONTENT.tagline ? (\n          <p className=\"text-xs font-semibold uppercase tracking-[0.3em] text-sky-300 sm:text-sm\">{HERO_CONTENT.tagline}</p>\n        ) : null}\n        {HERO_CONTENT.heading ? (\n          <h1 className=\"text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl\">\n            {HERO_CONTENT.heading}\n          </h1>\n        ) : null}\n        {HERO_CONTENT.description ? (\n          <p className=\"max-w-3xl text-base text-slate-100/80 sm:text-lg\">\n            {HERO_CONTENT.description}\n          </p>\n        ) : null}\n      </div>\n    </section>\n  );\n}`);
+  }
+
+  if (cta) {
+    const ctaLiteral = JSON.stringify(
+      {
+        heading: cta.heading ?? null,
+        body: cta.body ?? null,
+        button: cta.button ?? null,
+      },
+      null,
+      2,
+    );
+    helpers.push(`const CTA_CONTENT = ${ctaLiteral} as const;`);
+    helpers.push(`function CallToAction() {\n  const button = CTA_CONTENT.button;\n  const isInternal = Boolean(button && button.href.startsWith('/'));\n  return (\n    <section className=\"relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 py-16 text-white\">\n      <div className=\"absolute inset-0 bg-[radial-gradient(circle_at_top,#1f2937,transparent)] opacity-60\" />\n      <div className=\"relative mx-auto flex max-w-4xl flex-col gap-6 px-6 text-center\">\n        {CTA_CONTENT.heading ? (\n          <h2 className=\"text-2xl font-semibold sm:text-3xl lg:text-4xl\">{CTA_CONTENT.heading}</h2>\n        ) : null}\n        {CTA_CONTENT.body ? (\n          <p className=\"text-base text-slate-100/80\">{CTA_CONTENT.body}</p>\n        ) : null}\n        {button ? (\n          isInternal ? (\n            <Link\n              href={button.href}\n              className=\"inline-flex items-center justify-center rounded-full bg-sky-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-500/40 transition hover:bg-sky-400\"\n              data-site2ts=\"cta-button\"\n            >\n              {button.label}\n            </Link>\n          ) : (\n            <a\n              href={button.href}\n              target=\"_blank\"\n              rel=\"noreferrer noopener\"\n              className=\"inline-flex items-center justify-center rounded-full bg-sky-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-500/40 transition hover:bg-sky-400\"\n              data-site2ts=\"cta-button\"\n            >\n              {button.label}\n            </a>\n          )\n        ) : null}\n      </div>\n    </section>\n  );\n}`);
+  }
+
+  return helpers.length ? `${helpers.join('\n\n')}\n` : '';
 }
 
 function mergeStyleString(existing: string | undefined, additions: Record<string, string>): string {

@@ -491,6 +491,16 @@ struct PackParams {
     generation_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ImproveParams {
+    #[serde(rename = "generationId")]
+    generation_id: String,
+    route: Option<String>,
+    issues: Option<Vec<String>>,
+    instructions: Option<String>,
+    metadata: Option<Value>,
+}
+
 fn handle_diff(params: DiffParams) -> RpcResult<Value> {
     let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
     let mut w = worker_mutex
@@ -524,6 +534,44 @@ fn handle_diff(params: DiffParams) -> RpcResult<Value> {
         json!({ "diffId": diff_id }),
     )
     .map_err(|e| RpcError::internal(e.to_string()))?;
+    Ok(res)
+}
+
+fn handle_improve(params: ImproveParams) -> RpcResult<Value> {
+    let worker_mutex = Worker::get().map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut w = worker_mutex
+        .lock()
+        .map_err(|_| RpcError::internal("failed to lock worker mutex"))?;
+    let res = w.call(
+        "improve",
+        json!({
+            "generationId": params.generation_id,
+            "route": params.route,
+            "issues": params.issues,
+            "instructions": params.instructions,
+            "metadata": params.metadata,
+        }),
+    )?;
+
+    let job_id = res
+        .get("jobId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Ulid::new().to_string());
+    let plan_path = res
+        .get("planPath")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
+    log_ndjson(
+        &job_id,
+        "improve",
+        "Improvement instruction recorded",
+        json!({ "planPath": plan_path }),
+    )
+    .map_err(|e| RpcError::internal(e.to_string()))?;
+
     Ok(res)
 }
 
@@ -710,6 +758,10 @@ async fn main() -> Result<()> {
             },
             "pack" => match parse_params::<PackParams>(&req.params) {
                 Ok(params) => handle_pack(params).map_err(|e| e.into()),
+                Err(e) => Err(e.into()),
+            },
+            "improve" => match parse_params::<ImproveParams>(&req.params) {
+                Ok(params) => handle_improve(params).map_err(|e| e.into()),
                 Err(e) => Err(e.into()),
             },
             _ => Err(RpcError::new(-32601, "method not found", None).into()),

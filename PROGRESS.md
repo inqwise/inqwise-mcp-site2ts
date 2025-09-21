@@ -28,3 +28,5 @@ This file tracks high-level tasks and status. One active task at a time.
 - Commits are created only at important milestones or upon task completion.
 - NDJSON logs and IDs (ULIDs) must align with the spec.
 - 2025-09-19: Generator now keeps original markup, rewrites same-origin links to relative paths, and inlines Wix background assets (wow-image) for higher visual fidelity.
+- 2025-09-21: Diff pipeline now emits per-route heatmaps with DOM zone mappings and MCP `improve` method records automated remediation instructions for downstream tooling.
+- 2025-09-21: Added `tools/plan-improvements.js` to parse diff summaries, filter already-attempted issues, and surface orchestrator-ready action plans/stop signals.

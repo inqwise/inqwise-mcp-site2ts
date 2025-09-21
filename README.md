@@ -42,7 +42,8 @@ If creating the repo via GitHub UI, choose: Owner `inqwise`, repo name `inqwise-
 MVP spec authored; implementation tasks planned. See `PROGRESS.md`.
 
 Recent updates:
-- Generator preserves the original Wix markup, rewrites same-origin links to relative URLs, and converts `wow-image` backgrounds into inline CSS for better visual parity.
+- Diff runs now emit per-route summaries (`summary.json`) with heatmaps and DOM selectors for automation.
+- `tools/plan-improvements.js` proposes follow-up actions based on diff output + logged improvement requests.
 
 ## License
 Apache-2.0 — see `LICENSE` for details.
@@ -60,6 +61,11 @@ More examples: `docs/API_EXAMPLES.md`.
 Notes:
 - The Rust server spawns the Node worker from `node/site2ts-worker/dist/index.js`, so the worker must be built first (`npm run build`). The script does this for convenience.
 - For interactive sessions (multiple requests in one process), you can run the server directly and feed it one JSON line per request via stdin.
+
+## Diff Summaries & Improvement Planning
+- After running `diff`, inspect `.site2ts/reports/diff/<diffId>/<route>/summary.json` for the per-route heatmap and DOM-zone rankings.
+- Use `node tools/plan-improvements.js` to generate an orchestration payload summarising the latest diff and suggesting next actions. The script also suppresses issues already logged via the `improve` MCP method.
+- Improvement requests are persisted under `.site2ts/reports/improve/<jobId>.json` so LLM/tooling can track what has already been attempted.
 
 ## Dependencies Policy
 - Rust crates: pinned to latest minor/patch series for stability (see `rust/site2ts-server/Cargo.toml`). We periodically bump to latest stable; breaking bumps are handled explicitly.

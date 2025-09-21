@@ -9,6 +9,7 @@ import { apply as doApply } from './apply.js';
 import { assets as doAssets } from './assets.js';
 import { pack as doPack } from './pack.js';
 import { initRuntime } from './init.js';
+import { improve as doImprove } from './improve.js';
 
 type Json = any;
 
@@ -73,6 +74,15 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
       const threshold = typeof params?.threshold === 'number' ? (params.threshold as number) : 0.01;
       if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
       return await doDiff(generationId, baselines, viewport, threshold);
+    }
+    case 'improve': {
+      const generationId = (params?.generationId as string) || '';
+      if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
+      const route = params?.route as string | undefined;
+      const issues = Array.isArray(params?.issues) ? (params.issues as string[]) : undefined;
+      const instructions = typeof params?.instructions === 'string' ? (params.instructions as string) : undefined;
+      const metadata = typeof params?.metadata === 'object' && params?.metadata !== null ? (params.metadata as Record<string, unknown>) : undefined;
+      return await doImprove({ generationId, route, issues, instructions, metadata });
     }
     case 'audit': {
       const generationId = (params?.generationId as string) || '';

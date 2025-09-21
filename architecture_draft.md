@@ -13,17 +13,26 @@ Implementation: **Rust MCP server** + **Node (Playwright/Next.js) helper**. ARM-
   .site2ts/
     staging/     — persistent temp workspace (apply overwrites)
     cache/       — crawl artifacts (HTML, screenshots, HAR) — pruned by default
-    reports/     — lint.json, tsc.json (build-only in MVP)
+    reports/
+      diff/<diffId>/<route>/{baseline.png, actual.png, diff.png, metrics.json, summary.json}
+      improve/<jobId>.json — recorded `improve` requests for automation/audit
+      tailwind/, tsc/, eslint/ … (per-tool artifacts)
     logs/        — NDJSON job logs
 
-## 4. MVP Decisions (snapshot)
+## 4. Diff Feedback Loop (MVP+)
+- Diff tool writes structured summaries per route (heatmap + DOM zones) to aid automation.
+- `tools/plan-improvements.js` parses the newest diff, cross-references past improvements, and suggests next actions/stop conditions.
+- `improve` MCP method logs instructions (generationId, route, issue tags) for the orchestrator or humans to act on.
+- External orchestrator (LLM or scripted policy) reads the summary payload, chooses an action, issues MCP commands, and reruns generate/diff until thresholds are satisfied.
+
+## 5. MVP Decisions (snapshot)
 - Headless rendering (Playwright/Chromium), filesystem-only cache.
 - Persistent staging; explicit apply with overwrite.
 - Manual audit (tsc + lint). Latest stable Next.js/TS pinned per-project at init.
 - Full Tailwind conversion; full‑page visual diffs; tight default tolerance.
 - No auth, no API client SDK in MVP. Strict prereqs (Node 20 LTS, npm, Playwright).
 
-## 5. High‑level Flow (diagram placeholder)
+## 6. High‑level Flow (diagram placeholder)
 ```mermaid
 sequenceDiagram
     participant Client as MCP Client (Warp/Goose/Codex)
@@ -61,7 +70,7 @@ sequenceDiagram
     Server-->>Client: apply done
 ```
 
-## 6. Future Improvements (backlog)
+## 7. Future Improvements (backlog)
 - Hybrid CSS to Tailwind conversion (auto-suggest, human-approved batches).
 - Optional auto-audit post generate/apply.
 - Authentication support (cookie/session injection).
@@ -69,5 +78,5 @@ sequenceDiagram
 - Configurable artifact retention; centralized heavy-asset cache.
 - Node 22 LTS testing; privileged helper mode for Linux deps.
 
-## 7. MVP Scope Boundaries
+## 8. MVP Scope Boundaries
 Out of scope: authenticated pages, API stubs, perf/a11y audits, automatic updates.

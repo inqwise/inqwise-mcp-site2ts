@@ -13,67 +13,125 @@ fi
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 
-# Helper to send a single JSON-RPC request via tools/rpc.sh and capture result
-send() {
-  local REQ=$1
-  tools/rpc.sh "$REQ"
+# Helper to send a JSON-RPC request, echo the streamed output, and capture to a temp file.
+send_and_capture() {
+  local LABEL=$1
+  local REQ=$2
+  local FILE=$3
+  echo "[flow] $LABEL =>"
+  tools/rpc.sh "$REQ" | tee "$FILE"
+}
+
+extract_field_from_file() {
+  local FILE=$1
+  local FIELD_PATH=$2
+  local LINE
+  LINE=$(awk '/"result"/ { last = $0 } END { if (last) print last }' "$FILE")
+  if [[ -z "$LINE" ]]; then
+    return 1
+  fi
+  node -e '
+const raw = process.argv[1];
+const path = (process.argv[2] || "").split(".").filter(Boolean);
+const parsed = JSON.parse(raw);
+let ref = parsed;
+for (const key of path) {
+  if (ref && Object.prototype.hasOwnProperty.call(ref, key)) {
+    ref = ref[key];
+  } else {
+    ref = undefined;
+    break;
+  }
+}
+if (ref === undefined) {
+  process.exit(1);
+}
+if (typeof ref === "object") {
+  console.log(JSON.stringify(ref));
+} else {
+  console.log(ref);
+}
+' "$LINE" "$FIELD_PATH"
 }
 
 # init
-INIT_RES=$(send '{"jsonrpc":"2.0","method":"init","params":{"projectRoot":"."},"id":1}')
-echo "[flow] init => $INIT_RES"
+INIT_FILE=$(mktemp)
+send_and_capture "init" '{"jsonrpc":"2.0","method":"init","params":{"projectRoot":"."},"id":1}' "$INIT_FILE"
+rm -f "$INIT_FILE"
 
 # crawl
 CRAWL_REQ=$(cat <<JSON
 {"jsonrpc":"2.0","method":"crawl","params":{"startUrl":"$START_URL","sameOrigin":true,"maxPages":25,"maxDepth":3,"useSitemap":true,"obeyRobots":true},"id":2}
 JSON
 )
-CRAWL_RES=$(send "$CRAWL_REQ")
-echo "[flow] crawl => $CRAWL_RES"
-SITEMAP_ID=$(node -e "const r=JSON.parse(process.argv[1]); console.log((r.result&&r.result.siteMapId)||'');" "$CRAWL_RES")
+CRAWL_FILE=$(mktemp)
+send_and_capture "crawl" "$CRAWL_REQ" "$CRAWL_FILE"
+SITEMAP_ID=$(extract_field_from_file "$CRAWL_FILE" 'result.siteMapId') || {
+  echo "[flow] failed to parse crawl result" >&2
+  rm -f "$CRAWL_FILE"
+  exit 1
+}
+rm -f "$CRAWL_FILE"
 
 # analyze
 ANALYZE_REQ=$(cat <<JSON
 {"jsonrpc":"2.0","method":"analyze","params":{"siteMapId":"$SITEMAP_ID"},"id":3}
 JSON
 )
-ANALYZE_RES=$(send "$ANALYZE_REQ")
-echo "[flow] analyze => $ANALYZE_RES"
-ANALYSIS_ID=$(node -e "const r=JSON.parse(process.argv[1]); console.log((r.result&&r.result.analysisId)||'');" "$ANALYZE_RES")
+ANALYZE_FILE=$(mktemp)
+send_and_capture "analyze" "$ANALYZE_REQ" "$ANALYZE_FILE"
+ANALYSIS_ID=$(extract_field_from_file "$ANALYZE_FILE" 'result.analysisId') || {
+  echo "[flow] failed to parse analyze result" >&2
+  rm -f "$ANALYZE_FILE"
+  exit 1
+}
+rm -f "$ANALYZE_FILE"
 
 # scaffold
 SCAFFOLD_REQ=$(cat <<JSON
 {"jsonrpc":"2.0","method":"scaffold","params":{"analysisId":"$ANALYSIS_ID","appRouter":true},"id":4}
 JSON
 )
-SCAFFOLD_RES=$(send "$SCAFFOLD_REQ")
-echo "[flow] scaffold => $SCAFFOLD_RES"
-SCAFFOLD_ID=$(node -e "const r=JSON.parse(process.argv[1]); console.log((r.result&&r.result.scaffoldId)||'');" "$SCAFFOLD_RES")
+SCAFFOLD_FILE=$(mktemp)
+send_and_capture "scaffold" "$SCAFFOLD_REQ" "$SCAFFOLD_FILE"
+SCAFFOLD_ID=$(extract_field_from_file "$SCAFFOLD_FILE" 'result.scaffoldId') || {
+  echo "[flow] failed to parse scaffold result" >&2
+  rm -f "$SCAFFOLD_FILE"
+  exit 1
+}
+rm -f "$SCAFFOLD_FILE"
 
 # generate
 GENERATE_REQ=$(cat <<JSON
 {"jsonrpc":"2.0","method":"generate","params":{"analysisId":"$ANALYSIS_ID","scaffoldId":"$SCAFFOLD_ID","tailwindMode":"full"},"id":5}
 JSON
 )
-GENERATE_RES=$(send "$GENERATE_REQ")
-echo "[flow] generate => $GENERATE_RES"
-GENERATION_ID=$(node -e "const r=JSON.parse(process.argv[1]); console.log((r.result&&r.result.generationId)||'');" "$GENERATE_RES")
+GENERATE_FILE=$(mktemp)
+send_and_capture "generate" "$GENERATE_REQ" "$GENERATE_FILE"
+GENERATION_ID=$(extract_field_from_file "$GENERATE_FILE" 'result.generationId') || {
+  echo "[flow] failed to parse generate result" >&2
+  rm -f "$GENERATE_FILE"
+  exit 1
+}
+rm -f "$GENERATE_FILE"
 
 # diff
 DIFF_REQ=$(cat <<JSON
 {"jsonrpc":"2.0","method":"diff","params":{"generationId":"$GENERATION_ID","baselines":"recrawl","viewport":{"w":1280,"h":800,"deviceScale":1},"threshold":0.01},"id":6}
 JSON
 )
-DIFF_RES=$(send "$DIFF_REQ")
-echo "[flow] diff => $DIFF_RES"
+DIFF_FILE=$(mktemp)
+send_and_capture "diff" "$DIFF_REQ" "$DIFF_FILE"
+rm -f "$DIFF_FILE"
 
 # audit
 AUDIT_REQ=$(cat <<JSON
 {"jsonrpc":"2.0","method":"audit","params":{"generationId":"$GENERATION_ID","tsStrict":true,"eslintConfig":"recommended"},"id":7}
 JSON
 )
-AUDIT_RES=$(send "$AUDIT_REQ")
-echo "[flow] audit => $AUDIT_RES"
+AUDIT_FILE=$(mktemp)
+send_and_capture "audit" "$AUDIT_REQ" "$AUDIT_FILE"
+rm -f "$AUDIT_FILE"
 
 # apply (dry-run by default)
 if [[ "${APPLY_FLAG:-}" == "--apply" ]]; then
@@ -85,8 +143,8 @@ APPLY_REQ=$(cat <<JSON
 {"jsonrpc":"2.0","method":"apply","params":$APPLY_PARAMS,"id":8}
 JSON
 )
-APPLY_RES=$(send "$APPLY_REQ")
-echo "[flow] apply => $APPLY_RES"
+APPLY_FILE=$(mktemp)
+send_and_capture "apply" "$APPLY_REQ" "$APPLY_FILE"
+rm -f "$APPLY_FILE"
 
 echo "[flow] done. Generation: $GENERATION_ID"
-
