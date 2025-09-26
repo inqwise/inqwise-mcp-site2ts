@@ -9,7 +9,7 @@
     "generationId": { "type": "string" },
     "baselines": { "type": "string", "enum": ["recrawl", "cached"], "default": "recrawl" },
     "viewport": { "$ref": "common.v1.json#/$defs/viewport" },
-    "threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.01 }
+    "threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.01 },
+    "renderReport": { "type": "boolean", "default": false }
   }
 }
-

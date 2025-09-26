@@ -72,8 +72,9 @@ async function handleAsync(method: string, params: Json): Promise<Json> {
         deviceScale: 1,
       };
       const threshold = typeof params?.threshold === 'number' ? (params.threshold as number) : 0.01;
+      const renderReport = Boolean(params?.renderReport ?? false);
       if (!generationId) throw Object.assign(new Error('generationId required'), { code: -32602 });
-      return await doDiff(generationId, baselines, viewport, threshold);
+      return await doDiff(generationId, baselines, viewport, threshold, renderReport);
     }
     case 'improve': {
       const generationId = (params?.generationId as string) || '';

@@ -2,12 +2,51 @@
 set -euo pipefail
 
 # End-to-end flow helper. Requires a URL argument.
-# Usage: tools/full_flow.sh https://example.com [--apply]
+# Usage: tools/full_flow.sh https://example.com [--apply] [--improve-route </path>] [--improve-note "text"]
 
-START_URL=${1:-}
-APPLY_FLAG=${2:-}
+START_URL=""
+APPLY=false
+IMPROVE_ROUTE=""
+IMPROVE_NOTE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --apply)
+      APPLY=true
+      shift
+      ;;
+    --improve-route)
+      [[ $# -ge 2 ]] || { echo "--improve-route requires a value" >&2; exit 1; }
+      IMPROVE_ROUTE="$2"
+      shift 2
+      ;;
+    --improve-note)
+      [[ $# -ge 2 ]] || { echo "--improve-note requires a value" >&2; exit 1; }
+      IMPROVE_NOTE="$2"
+      shift 2
+      ;;
+    --help)
+      echo "Usage: $0 <start-url> [--apply] [--improve-route </path>] [--improve-note \"text\"]" >&2
+      exit 0
+      ;;
+    --*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      if [[ -z "$START_URL" ]]; then
+        START_URL="$1"
+        shift
+      else
+        echo "Unexpected positional argument: $1" >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
+
 if [[ -z "$START_URL" ]]; then
-  echo "Usage: $0 <start-url> [--apply]" >&2
+  echo "Usage: $0 <start-url> [--apply] [--improve-route </path>] [--improve-note \"text\"]" >&2
   exit 1
 fi
 
@@ -134,7 +173,7 @@ send_and_capture "audit" "$AUDIT_REQ" "$AUDIT_FILE"
 rm -f "$AUDIT_FILE"
 
 # apply (dry-run by default)
-if [[ "${APPLY_FLAG:-}" == "--apply" ]]; then
+if $APPLY; then
   APPLY_PARAMS='{"generationId":"'$GENERATION_ID'","target":"./","dryRun":false}'
 else
   APPLY_PARAMS='{"generationId":"'$GENERATION_ID'","target":"./","dryRun":true}'
@@ -146,5 +185,30 @@ JSON
 APPLY_FILE=$(mktemp)
 send_and_capture "apply" "$APPLY_REQ" "$APPLY_FILE"
 rm -f "$APPLY_FILE"
+
+if [[ -n "$IMPROVE_NOTE" ]]; then
+  IMPROVE_ROUTE_VALUE=${IMPROVE_ROUTE:-"/"}
+  IMPROVE_REQ=$(python3 - <<'PY' "$GENERATION_ID" "$IMPROVE_ROUTE_VALUE" "$IMPROVE_NOTE"
+import json
+import sys
+
+generation_id, route, note = sys.argv[1:4]
+payload = {
+    "jsonrpc": "2.0",
+    "method": "improve",
+    "params": {
+        "generationId": generation_id,
+        "route": route,
+        "instructions": note,
+    },
+    "id": 9,
+}
+print(json.dumps(payload))
+PY
+)
+  IMPROVE_FILE=$(mktemp)
+  send_and_capture "improve" "$IMPROVE_REQ" "$IMPROVE_FILE"
+  rm -f "$IMPROVE_FILE"
+fi
 
 echo "[flow] done. Generation: $GENERATION_ID"

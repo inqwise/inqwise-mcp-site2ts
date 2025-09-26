@@ -455,6 +455,8 @@ struct DiffParams {
     viewport: Option<Value>,
     #[serde(default)]
     threshold: Option<f64>,
+    #[serde(default, rename = "renderReport")]
+    render_report: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -513,6 +515,7 @@ fn handle_diff(params: DiffParams) -> RpcResult<Value> {
             "baselines": params.baselines.unwrap_or_else(|| "recrawl".into()),
             "viewport": params.viewport.unwrap_or_else(|| json!({"w":1280,"h":800,"deviceScale":1})),
             "threshold": params.threshold.unwrap_or(0.01),
+            "renderReport": params.render_report.unwrap_or(false),
         }),
     )?;
 

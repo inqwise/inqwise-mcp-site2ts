@@ -8,6 +8,7 @@
   "properties": {
     "jobId": { "$ref": "common.v1.json#/$defs/jobId" },
     "diffId": { "$ref": "common.v1.json#/$defs/ulid" },
+    "reportPath": { "type": "string" },
     "perRoute": {
       "type": "array",
       "items": {
@@ -33,4 +34,3 @@
     }
   }
 }
-

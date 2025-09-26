@@ -53,6 +53,7 @@ export async function diff(
   baselines: 'recrawl' | 'cached',
   viewport: { w: number; h: number; deviceScale: number },
   threshold: number,
+  renderReport: boolean,
 ) {
   const jobId = ulid();
   const diffId = ulid();
@@ -268,7 +269,30 @@ export async function diff(
   const passed = perRoute.filter((p) => p.diffRatio <= threshold).length;
   const failed = perRoute.length - passed;
 
-  return { jobId, diffId, perRoute, summary: { passed, failed, avg } };
+  let reportPath: string | undefined;
+  if (renderReport) {
+    try {
+      reportPath = await generateHtmlReport(outRoot, {
+        jobId,
+        diffId,
+        generationId,
+        baselines,
+        viewport,
+        threshold,
+        perRoute,
+        summary: { passed, failed, avg },
+      });
+    } catch (err) {
+      emitProgress({
+        tool: 'diff',
+        phase: 'warn',
+        detail: `failed to render diff report: ${err instanceof Error ? err.message : String(err)}`,
+        extra: { jobId, generationId },
+      });
+    }
+  }
+
+  return { jobId, diffId, perRoute, summary: { passed, failed, avg }, reportPath };
 }
 
 async function renderActual(url: string, vp: { w: number; h: number; deviceScale: number }, outRoot: string, route: string) {
@@ -440,6 +464,149 @@ function summarizeZones(diffPng: PNG, width: number, height: number, zones: DomZ
     }))
     .sort((a, b) => b.diffRatio - a.diffRatio)
     .slice(0, 12);
+}
+
+function toPosix(p: string): string {
+  return p.split(path.sep).join('/');
+}
+
+async function generateHtmlReport(
+  outRoot: string,
+  opts: {
+    jobId: string;
+    diffId: string;
+    generationId: string;
+    baselines: 'recrawl' | 'cached';
+    viewport: { w: number; h: number; deviceScale: number };
+    threshold: number;
+    perRoute: Array<{
+      route: string;
+      diffRatio: number;
+      artifacts: { baseline: string; actual: string; diff: string };
+      heatmap: Array<{ cell: string; ratio: number }>;
+      domZones: Array<{
+        selector: string;
+        label: string;
+        tag: string;
+        diffRatio: number;
+        bounds: DomBounds;
+      }>;
+      summaryPath: string;
+    }>;
+    summary: { passed: number; failed: number; avg: number };
+  },
+) {
+  await ensureDir(outRoot);
+  const createdAt = new Date().toISOString();
+
+  const rows = opts.perRoute
+    .map((route) => {
+      const folder = routeToFolder(route.route);
+      const baselineRel = toPosix(path.relative(outRoot, route.artifacts.baseline));
+      const actualRel = toPosix(path.relative(outRoot, route.artifacts.actual));
+      const diffRel = toPosix(path.relative(outRoot, route.artifacts.diff));
+      const summaryRel = toPosix(path.relative(outRoot, route.summaryPath));
+      const domList = route.domZones
+        .map(
+          (zone) => `
+            <li>
+              <code>${zone.label || zone.selector}</code>
+              <span class="chip">${(zone.diffRatio * 100).toFixed(2)}%</span>
+            </li>`,
+        )
+        .join('');
+      const heat = route.heatmap
+        .map((cell) => `<li>${cell.cell}: ${(cell.ratio * 100).toFixed(2)}%</li>`)
+        .join('');
+      return `
+        <section class="route">
+          <header>
+            <h2>${route.route}</h2>
+            <span class="chip ${route.diffRatio <= opts.threshold ? 'chip-pass' : 'chip-fail'}">${(route.diffRatio * 100).toFixed(2)}%</span>
+          </header>
+          <div class="gallery">
+            <figure>
+              <figcaption>Baseline</figcaption>
+              <img src="${baselineRel}" alt="Baseline screenshot for ${route.route}">
+            </figure>
+            <figure>
+              <figcaption>Actual</figcaption>
+              <img src="${actualRel}" alt="Actual screenshot for ${route.route}">
+            </figure>
+            <figure>
+              <figcaption>Diff</figcaption>
+              <img src="${diffRel}" alt="Diff heatmap for ${route.route}">
+            </figure>
+          </div>
+          <details>
+            <summary>Top diff zones</summary>
+            <ul class="zones">${domList || '<li>None captured</li>'}</ul>
+          </details>
+          <details>
+            <summary>Heatmap cells</summary>
+            <ul class="heatmap">${heat}</ul>
+          </details>
+          <p class="meta">Summary: <a href="${summaryRel}">metrics JSON</a></p>
+        </section>`;
+    })
+    .join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Diff Report ${opts.diffId}</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #0f172a; background: #f8fafc; }
+    body { margin: 0; padding: 2rem 4vw; }
+    header.page { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 2rem; }
+    header.page h1 { margin: 0; font-size: 2.25rem; }
+    .summary { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .summary span { background: #e2e8f0; padding: 0.4rem 0.75rem; border-radius: 9999px; font-size: 0.9rem; }
+    .routes { display: flex; flex-direction: column; gap: 2.5rem; }
+    section.route { background: #fff; border-radius: 1.25rem; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); padding: 1.5rem; }
+    section.route header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+    section.route header h2 { margin: 0; font-size: 1.5rem; }
+    .gallery { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    figure { margin: 0; background: #f1f5f9; padding: 0.75rem; border-radius: 0.75rem; }
+    figure img { width: 100%; border-radius: 0.5rem; background: #1e293b; }
+    figcaption { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; }
+    details { margin-top: 1rem; }
+    details summary { cursor: pointer; font-weight: 600; }
+    ul.zones, ul.heatmap { margin: 0.5rem 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; list-style: disc; }
+    .chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.75rem; border-radius: 9999px; font-weight: 600; color: #fff; background: #f59e0b; }
+    .chip-pass { background: #16a34a; }
+    .chip-fail { background: #dc2626; }
+    .meta { margin-top: 1rem; font-size: 0.85rem; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header class="page">
+    <h1>Visual Diff Report</h1>
+    <div class="summary">
+      <span><strong>Diff ID:</strong> ${opts.diffId}</span>
+      <span><strong>Generation:</strong> ${opts.generationId}</span>
+      <span><strong>Baselines:</strong> ${opts.baselines}</span>
+      <span><strong>Viewport:</strong> ${opts.viewport.w}×${opts.viewport.h} @ ${opts.viewport.deviceScale}x</span>
+      <span><strong>Threshold:</strong> ${(opts.threshold * 100).toFixed(2)}%</span>
+      <span><strong>Routes:</strong> ${opts.perRoute.length}</span>
+      <span><strong>Passed:</strong> ${opts.summary.passed}</span>
+      <span><strong>Failed:</strong> ${opts.summary.failed}</span>
+      <span><strong>Average diff:</strong> ${(opts.summary.avg * 100).toFixed(2)}%</span>
+      <span><strong>Generated:</strong> ${createdAt}</span>
+    </div>
+  </header>
+  <main class="routes">
+    ${rows || '<p>No routes available for this diff.</p>'}
+  </main>
+</body>
+</html>`;
+
+  const reportPath = path.join(outRoot, 'index.html');
+  await fs.writeFile(reportPath, html, 'utf8');
+  return reportPath;
 }
 
 function isDiffPixel(data: Uint8Array, idx: number): boolean {

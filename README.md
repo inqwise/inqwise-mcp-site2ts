@@ -43,6 +43,8 @@ MVP spec authored; implementation tasks planned. See `PROGRESS.md`.
 
 Recent updates:
 - Diff runs now emit per-route summaries (`summary.json`) with heatmaps and DOM selectors for automation.
+- `tools/rpc.sh` accepts custom timeouts (`--timeout` / `RPC_TIMEOUT_SEC`), optional output capture (`--capture`), and prints a one-line summary for each RPC.
+- `tools/full_flow.sh` can optionally append an `improve` RPC via `--improve-route` / `--improve-note` after the apply step.
 - `tools/plan-improvements.js` proposes follow-up actions based on diff output + logged improvement requests.
 
 ## License
@@ -66,6 +68,7 @@ Notes:
 - After running `diff`, inspect `.site2ts/reports/diff/<diffId>/<route>/summary.json` for the per-route heatmap and DOM-zone rankings.
 - Use `node tools/plan-improvements.js` to generate an orchestration payload summarising the latest diff and suggesting next actions. The script also suppresses issues already logged via the `improve` MCP method.
 - Improvement requests are persisted under `.site2ts/reports/improve/<jobId>.json` so LLM/tooling can track what has already been attempted.
+- At present we iterate on each failing DOM zone by looping on **diff → improve** until the per-zone ratio drops below the 1 % threshold (starting with the highest element from top to bottom). Each `improve` call should describe the exact element or logical block to rewrite; after every iteration we re-run `diff`, assess the new `summary.json`/`metrics.json`, and then move to the next offending element.
 
 ## Dependencies Policy
 - Rust crates: pinned to latest minor/patch series for stability (see `rust/site2ts-server/Cargo.toml`). We periodically bump to latest stable; breaking bumps are handled explicitly.
@@ -80,6 +83,8 @@ Notes:
 ## Roadmap / Next Improvements
 - Tailwind mapping: expand utilities (colors, shadows, line-height/letter-spacing mapping), reduce CSS fallback footprint.
 - Visual diff: harden Next.js start/screenshot timing; support multiple viewports (mobile).
+- Visual diff UX: generate an HTML dashboard that stitches together per-route screenshots and
+  summary JSON from `.site2ts/reports/diff` for easier review.
 - Apply: deeper route-aware deletions; additional safety prompts in plan mode.
 - Tests: unit tests for HTML→TSX and `mapInlineStyleToTw` to avoid regressions.
 - Packaging: optional CLI wrapper for JSON-RPC; simple config file support.
@@ -117,8 +122,8 @@ We will open GitHub Issues to track these items; for now this section serves as 
   - Result: `{ "jobId": "01...", "generationId": "01..." }`
 
 - `diff`
-  - Request: `{ "method": "diff", "params": { "generationId": "01...", "baselines": "recrawl", "viewport": {"w":1280,"h":800,"deviceScale":1}, "threshold": 0.01 }, "id": 6 }`
-  - Result: `{ "jobId": "01...", "diffId": "01...", "perRoute": [...], "summary": {"passed":1,"failed":0,"avg":0.004} }`
+  - Request: `{ "method": "diff", "params": { "generationId": "01...", "baselines": "recrawl", "viewport": {"w":1280,"h":800,"deviceScale":1}, "threshold": 0.01, "renderReport": true }, "id": 6 }`
+  - Result: `{ "jobId": "01...", "diffId": "01...", "perRoute": [...], "summary": {"passed":1,"failed":0,"avg":0.004}, "reportPath": ".site2ts/reports/diff/01.../index.html" }`
 
 - `audit`
   - Request: `{ "method": "audit", "params": { "generationId": "01...", "tsStrict": true, "eslintConfig": "recommended" }, "id": 7 }`
@@ -127,6 +132,10 @@ We will open GitHub Issues to track these items; for now this section serves as 
 - `apply`
   - Request: `{ "method": "apply", "params": { "generationId": "01...", "target": "./", "dryRun": false }, "id": 8 }`
   - Result: `{ "jobId": "01...", "applied": true, "changedFiles": ["app/..."], "deletedFiles": {"removed":[...], "skipped":[...]} }`
+
+- `improve`
+  - Request: `{ "method": "improve", "params": { "generationId": "01...", "route": "/", "instructions": "note for the next pass" }, "id": 9 }`
+  - Result: `{ "jobId": "01...", "acknowledged": true, "planPath": ".site2ts/reports/improve/01....json" }`
 
 - `assets`
   - Request: `{ "method": "assets", "params": { "generationId": "01..." }, "id": 9 }`
