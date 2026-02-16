@@ -23,7 +23,7 @@
     "@types/pngjs": "^6.0.5"
   },
   "dependencies": {
-    "cheerio": "^1.0.0",
+    "cheerio": "^1.2.0",
     "posthtml": "^0.16.6",
     "ulid": "^2.3.0",
     "playwright-core": "^1.57.0",
